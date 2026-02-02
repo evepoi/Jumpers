@@ -2,9 +2,11 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
+// GitHub Actions 환경에서는 process.env.GITHUB_ACTIONS = "true" 로 들어옴
+const isGhPages = process.env.GITHUB_ACTIONS === "true";
+
 export default defineConfig({
   plugins: [vue()],
-  // ✅ GitHub Pages repo name이 Jumpers 라면 이게 맞아
-  //    (대소문자까지 정확히 일치해야 함)
-  base: "/Jumpers/",
+  // ✅ 로컬(dev)은 "/", GitHub Pages 배포(build)는 "/Jumpers/"
+  base: isGhPages ? "/Jumpers/" : "/",
 });
