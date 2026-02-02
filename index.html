@@ -2,12 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+
+    <!-- ✅ GitHub Pages(서브경로)에서도 깨지지 않게 BASE_URL 사용 -->
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%vite.svg" />
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vite + Vue</title>
   </head>
   <body>
     <div id="app"></div>
+
+    <!-- ✅ Vite가 빌드 시 base 적용해서 dist에서는 /Jumpers/assets/... 형태로 변환됨 -->
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
