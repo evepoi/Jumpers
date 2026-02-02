@@ -58,7 +58,14 @@
                   :checked="false"
                   @change="moveLineToNextWeek(day.key, day.shift, ln.id, $event)"
                 />
-                <span class="text">{{ ln.text }}</span>
+
+                <span class="textblock">
+                  <span class="place">{{ (ln.place || "").trim() }}</span>
+
+                  <span v-if="(ln.names || '').trim()" class="names">
+                    {{ normalizeNamesForHome(ln.names) }}
+                  </span>
+                </span>
               </label>
 
               <span class="tag" :class="ln.kind">
@@ -94,10 +101,7 @@
         </div>
       </header>
 
-      <p class="desc">
-        요일별 라인 추가/삭제/수정 → <b>Firestore에 즉시 반영</b>
-      </p>
-
+      <p class="desc">요일별 라인 추가/삭제/수정 → <b>Firestore에 즉시 반영</b></p>
       <p v-if="lastError" class="err">저장 오류: {{ lastError }}</p>
 
       <div v-if="!ready" class="loading">로딩중…</div>
@@ -130,25 +134,43 @@
 
           <ul class="lines">
             <li v-for="(ln, idx) in templateDays[editDayKey]" :key="ln.id" class="line edit-line">
-              <div class="line-edit-row">
-                <select class="inp smallsel" v-model="ln.kind" @change="persistTemplateDebounced()">
-                  <option value="pickup">승차</option>
-                  <option value="dropoff">하차</option>
-                </select>
+              <div class="edit-grid">
+                <label class="field">
+                  <span class="lab">승/하차</span>
+                  <select class="inp" v-model="ln.kind" @change="persistTemplateDebounced()">
+                    <option value="pickup">승차</option>
+                    <option value="dropoff">하차</option>
+                  </select>
+                </label>
 
-                <input
-                  class="inp"
-                  v-model="ln.text"
-                  placeholder="예) 14:03 [레이크시티] 최시온"
-                  @input="persistTemplateDebounced()"
-                />
+                <label class="field">
+                  <span class="lab">장소</span>
+                  <input
+                    class="inp"
+                    v-model="ln.place"
+                    placeholder='예) 14:00 [호반정문]  /  [1부 하차/레이크시티]'
+                    @input="persistTemplateDebounced()"
+                  />
+                </label>
 
-                <button class="btn small" type="button" @click="moveLine(editDayKey, idx, -1)">▲</button>
-                <button class="btn small" type="button" @click="moveLine(editDayKey, idx, 1)">▼</button>
+                <label class="field names-field">
+                  <span class="lab">명단</span>
+                  <textarea
+                    class="inp textarea"
+                    v-model="ln.names"
+                    placeholder="예) 정사랑, (김도경)&#10;추가 인원은 줄바꿈 가능"
+                    rows="3"
+                    @input="persistTemplateDebounced()"
+                  />
+                </label>
 
-                <button class="btn small danger2" type="button" @click="removeLine(editDayKey, idx)">
-                  삭제
-                </button>
+                <div class="row-actions">
+                  <button class="btn small" type="button" @click="moveLine(editDayKey, idx, -1)">▲</button>
+                  <button class="btn small" type="button" @click="moveLine(editDayKey, idx, 1)">▼</button>
+                  <button class="btn small danger2" type="button" @click="removeLine(editDayKey, idx)">
+                    삭제
+                  </button>
+                </div>
               </div>
             </li>
           </ul>
@@ -269,10 +291,8 @@ const editDayKey = ref("mon");
 
 /**
  * ✅ NEW STATE RULE
- * - state.weekShift[dayKey] = "현재(가장 위에 보여줄) 주차(shift)"   (기존 필드 재사용)
- * - state.doneMap[dayKey][lineId] = 그 라인이 속한 주차 shift(number) (기존 doneMap을 숫자맵으로 재사용)
- *
- * 즉, 더 이상 boolean done이 아니라 "라인 위치(몇 주차인지)" 저장.
+ * - state.weekShift[dayKey] = "현재(가장 위에 보여줄) 주차(shift)"
+ * - state.doneMap[dayKey][lineId] = 그 라인이 속한 주차 shift(number)
  */
 
 function getBaseShift(dayKey) {
@@ -327,15 +347,12 @@ function shiftsToRender(dayKey) {
   const lines = templateDays.value?.[dayKey] || [];
   const base = getBaseShift(dayKey);
 
-  // 라인이 없으면 카드 1개만
   if (lines.length === 0) return [base];
 
-  // 라인이 속한 shift들을 모음
   const set = new Set();
   set.add(base);
   for (const ln of lines) set.add(getLineShift(dayKey, ln.id));
 
-  // base보다 작은 건 화면에서 의미 없으니 제거
   const arr = Array.from(set).filter((s) => s >= base);
   arr.sort((a, b) => a - b);
   return arr;
@@ -368,23 +385,84 @@ function linesAt(dayKey, shift) {
 
 function dayIsDone(dayKey, shift) {
   const lines = templateDays.value?.[dayKey] || [];
-  if (lines.length === 0) return true; // 라인 없는 요일은 항상 완료로 간주(표시는 그대로)
+  if (lines.length === 0) return true;
   return linesAt(dayKey, shift).length === 0;
+}
+
+/** ✅ 홈에서 명단 표시: 여러 줄 입력을 그대로 줄바꿈 유지 */
+function normalizeNamesForHome(names) {
+  return String(names || "").trim();
+}
+
+/** ✅ 구버전 ln.text → (place/names) 변환 */
+function migrateLineShape(ln) {
+  if (typeof ln?.place === "string" || typeof ln?.names === "string") {
+    if (typeof ln.place !== "string") ln.place = "";
+    if (typeof ln.names !== "string") ln.names = "";
+    if (!ln.kind) ln.kind = "pickup";
+    return ln;
+  }
+
+  const raw = String(ln?.text || "").trim();
+  const kind = ln?.kind === "dropoff" ? "dropoff" : "pickup";
+
+  let place = "";
+  let names = "";
+
+  if (raw) {
+    if (kind === "pickup") {
+      const m = raw.replace(/\s+/g, " ").match(/^(\d{1,2}:\d{2})\s*(\[[^\]]+\])\s*(.*)$/);
+      if (m) {
+        place = `${m[1]} ${m[2]}`.trim();
+        names = (m[3] || "").trim();
+      } else {
+        const b = raw.match(/^(\[[^\]]+\])\s*(.*)$/);
+        if (b) {
+          place = b[1].trim();
+          names = (b[2] || "").trim();
+        } else {
+          place = raw;
+          names = "";
+        }
+      }
+    } else {
+      const m2 = raw.match(/^(\[[^\]]+\])\s*(.*)$/);
+      if (m2) {
+        place = m2[1].trim();
+        names = (m2[2] || "").trim();
+      } else {
+        place = raw;
+        names = "";
+      }
+    }
+  }
+
+  return {
+    id: ln.id,
+    kind,
+    place,
+    names,
+  };
+}
+
+/** ✅ 템플릿 전체 마이그레이션 */
+function migrateTemplateToStructured(tpl) {
+  const next = { version: 3, days: {} };
+  for (const k of dayKeys) {
+    const arr = Array.isArray(tpl?.days?.[k]) ? tpl.days[k] : [];
+    next.days[k] = arr.map((ln) => migrateLineShape({ ...ln }));
+  }
+  return next;
 }
 
 /** ✅ 체크하면 "그 라인만" 다음주(+1 shift)로 이동 */
 function moveLineToNextWeek(dayKey, shift, lineId, ev) {
   const checked = !!ev?.target?.checked;
   if (!checked) return;
-
   if (ev?.target) ev.target.checked = false;
 
-  // 현재 shift에서 다음 shift로 이동
   setLineShift(dayKey, lineId, (Number.isFinite(shift) ? shift : 0) + 1);
-
-  // baseShift(맨 위 카드)가 비었다면 자동으로 다음으로 당김
   normalizeBaseShift(dayKey);
-
   persistStateDebounced();
 }
 
@@ -426,9 +504,8 @@ function uid(prefix = "ln") {
 
 function addLine(dayKey) {
   const id = uid(dayKey);
-  templateDays.value[dayKey].push({ id, kind: "pickup", text: "" });
+  templateDays.value[dayKey].push({ id, kind: "pickup", place: "", names: "" });
 
-  // 새 라인은 "현재 baseShift"에 붙이기
   setLineShift(dayKey, id, getBaseShift(dayKey));
 
   persistTemplateDebounced();
@@ -439,7 +516,6 @@ function removeLine(dayKey, index) {
   const ln = templateDays.value[dayKey][index];
   templateDays.value[dayKey].splice(index, 1);
 
-  // 삭제된 라인의 shift 기록도 제거
   if (state.value?.doneMap?.[dayKey] && ln?.id) {
     delete state.value.doneMap[dayKey][ln.id];
   }
@@ -482,9 +558,8 @@ function persistTemplateDebounced() {
 }
 
 async function resetTemplateToDefault() {
-  template.value = defaultTemplate();
+  template.value = migrateTemplateToStructured(defaultTemplate());
 
-  // 템플릿 리셋 시: 라인 shift 맵도 초기화(기본은 0)
   const def = defaultState();
   state.value.weekShift = def.weekShift;
   state.value.doneMap = {};
@@ -505,7 +580,7 @@ async function reloadAll() {
 /** ===== load ===== */
 function looksLikeLegacyDoneMap(dm) {
   if (!dm || typeof dm !== "object") return false;
-  return Object.keys(dm).some((k) => k.includes(":")); // 예: "tue:0" 같은 키면 구버전
+  return Object.keys(dm).some((k) => k.includes(":"));
 }
 
 async function initLoad(force = false) {
@@ -515,17 +590,20 @@ async function initLoad(force = false) {
   // template
   try {
     const t = await loadTemplate();
+
     if (!t || !t.days || force) {
-      const def = defaultTemplate();
+      const def = migrateTemplateToStructured(defaultTemplate());
       template.value = def;
       await saveTemplate(def);
     } else {
-      template.value = { version: 2, days: t.days };
+      const structured = migrateTemplateToStructured({ version: t.version || 0, days: t.days });
+      template.value = structured;
+      await saveTemplate(structured);
     }
   } catch (e) {
     console.error("[loadTemplate] failed:", e);
     lastError.value = e?.message || String(e);
-    template.value = defaultTemplate();
+    template.value = migrateTemplateToStructured(defaultTemplate());
   }
 
   // state
@@ -537,8 +615,6 @@ async function initLoad(force = false) {
       await saveState(defS);
     } else {
       const dm = s.doneMap || {};
-
-      // ✅ 구버전(doneMap이 sk키 구조)이면, 깨끗하게 초기화(라인 이동 방식이 완전히 달라서 변환 불가)
       const safeDoneMap = looksLikeLegacyDoneMap(dm) ? {} : dm;
 
       state.value = {
@@ -553,7 +629,7 @@ async function initLoad(force = false) {
     state.value = defaultState();
   }
 
-  // ✅ 템플릿에 존재하는 모든 라인은 shift 기본값(0)이 보장되도록(저장 없이 런타임에서만)
+  // ✅ 모든 라인은 shift 기본값(0) 보장
   for (const k of dayKeys) {
     const lines = template.value?.days?.[k] || [];
     for (const ln of lines) {
@@ -766,10 +842,26 @@ onBeforeUnmount(() => {
   margin-top: 2px;
 }
 
-.text {
+/* ✅ 홈 표시: 장소 + 명단(여러 줄) */
+.textblock {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.place {
   font-size: 14px;
   line-height: 1.35;
   word-break: break-word;
+}
+
+.names {
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.78;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 /* Tags */
@@ -925,31 +1017,64 @@ onBeforeUnmount(() => {
 }
 
 .edit-line {
-  padding: 8px;
+  padding: 10px;
 }
 
-.line-edit-row {
+.edit-grid {
   display: flex;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.lab {
+  font-size: 11px;
+  opacity: 0.75;
 }
 
 .inp {
-  height: 34px;
+  height: 36px;
   padding: 0 10px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(0, 0, 0, 0.18);
   color: #eaf0ff;
   outline: none;
+
+  /* ✅ NEW: 설정 입력칸 <-> 꽉 차게 */
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .inp:focus {
   border-color: rgba(79, 107, 255, 0.55);
 }
 
-.smallsel {
-  width: 88px;
+.textarea {
+  height: auto;
+  min-height: 84px;
+  padding: 10px;
+  resize: vertical;
+  line-height: 1.4;
+  white-space: pre-wrap;
+
+  /* ✅ NEW: textarea도 <-> 꽉 */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .footer {
