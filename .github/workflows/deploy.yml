@@ -29,17 +29,18 @@ jobs:
           node-version: 20
           cache: npm
 
-      # ✅ Pages 설정 + base 경로 자동 제공
-      - uses: actions/configure-pages@v5
+      # ✅ Pages 설정 + base 경로 제공
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
 
       - run: npm ci
 
-      # ✅ Vite가 base를 자동 반영하게 주입
+      # ✅ Vite가 base를 자동 반영하게 BASE_URL 주입
       - name: Build
         run: npm run build
         env:
-          # repo pages면 보통 /Jumpers/ 가 들어감
-          BASE_URL: ${{ steps.configure-pages.outputs.base_path }}
+          BASE_URL: ${{ steps.pages.outputs.base_path }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,6 +1,7 @@
 <script setup>
 import HelloWorld from "./components/HelloWorld.vue";
-import viteLogo from "/vite.svg";
+
+const viteLogo = `${import.meta.env.BASE_URL}vite.svg`;
 import vueLogo from "./assets/vue.svg";
 </script>
 
@@ -9,6 +10,7 @@ import vueLogo from "./assets/vue.svg";
     <a href="https://vite.dev" target="_blank" rel="noreferrer">
       <img :src="viteLogo" class="logo" alt="Vite logo" />
     </a>
+
     <a href="https://vuejs.org/" target="_blank" rel="noreferrer">
       <img :src="vueLogo" class="logo vue" alt="Vue logo" />
     </a>
