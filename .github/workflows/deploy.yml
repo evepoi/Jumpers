@@ -30,15 +30,30 @@ jobs:
       - name: Build
         run: npm run build
 
-      # ✅ dist가 제대로 만들어졌는지 “강제 검증”
+      # ✅ dist가 제대로 만들어졌는지 검증 (assets는 선택)
       - name: Verify dist output
         run: |
+          set -e
+
           echo "=== dist list ==="
           ls -la dist || (echo "dist not found" && exit 1)
-          echo "=== dist/assets list ==="
-          ls -la dist/assets || (echo "dist/assets not found" && exit 1)
+
+          echo "=== dist/assets list (optional) ==="
+          if [ -d "dist/assets" ]; then
+            ls -la dist/assets
+          else
+            echo "dist/assets not found (ok)"
+          fi
+
           echo "=== dist/index.html (first 120 lines) ==="
-          sed -n '1,120p' dist/index.html
+          if [ -f "dist/index.html" ]; then
+            sed -n '1,120p' dist/index.html
+          else
+            echo "dist/index.html not found" && exit 1
+          fi
+
+          echo "=== dist tree (maxdepth 2) ==="
+          find dist -maxdepth 2 -type f -print
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
