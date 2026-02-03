@@ -56,6 +56,7 @@
           </div>
         </div>
 
+        <!-- ✅ 간단 추가폼 -->
         <div class="addbox">
           <div class="addgrid">
             <label class="field">
@@ -87,6 +88,7 @@
           <p v-if="routeError" class="err">{{ routeError }}</p>
         </div>
 
+        <!-- ✅ 통합 리스트(시간순) : 한 줄로 -->
         <div class="table">
           <div class="thead thead-inline">
             <span>승/하차</span>
@@ -114,7 +116,7 @@
         </div>
       </section>
 
-      <!-- ===== 명단 (10명 페이지 + 데스크탑 1줄 / 모바일 2줄) ===== -->
+      <!-- ===== 명단 ===== -->
       <section v-else class="card roster">
         <header class="card-head">
           <div>
@@ -129,7 +131,7 @@
         </header>
 
         <div class="rosterbar">
-          <div class="searchbar">
+          <div class="search">
             <input class="inp searchinp" v-model="nameQuery" placeholder="이름 검색" />
             <button class="btn small clearbtn" type="button" @click="clearSearch" :disabled="!nameQuery">
               지우기
@@ -146,7 +148,7 @@
         <div v-if="pagedPeople.length === 0" class="empty big">검색 결과가 없습니다.</div>
 
         <section v-for="p in pagedPeople" :key="p.id" class="personcard">
-          <div class="personhead">
+          <div class="editor-head">
             <div class="field grow">
               <span class="lab">이름</span>
               <input
@@ -157,10 +159,10 @@
               />
             </div>
 
-            <button class="btn danger" type="button" @click="removePerson(p.id)">삭제</button>
+            <button class="btn danger" type="button" @click="removePerson(p.id)">명단 삭제</button>
           </div>
 
-          <!-- 데스크탑/태블릿: 1줄 -->
+          <!-- 데스크탑: 1줄 -->
           <div class="compact desktop-only">
             <div class="chead">
               <span class="cday">요일</span>
@@ -203,7 +205,7 @@
             </div>
           </div>
 
-          <!-- 모바일: 2줄(승차 줄 / 하차 줄) -->
+          <!-- 모바일: 2줄 -->
           <div class="mcompact mobile-only">
             <div v-for="d in days" :key="d.key" class="mday">
               <div class="mday-head">
@@ -234,7 +236,7 @@
             </div>
           </div>
 
-          <div class="note">시간은 입력하지 않습니다. (요일 + 장소가 기본노선과 매칭되면 자동 표시)</div>
+          <div class="note">시간은 입력하지 않습니다. (요일 + 장소가 기본노선과 매칭되면 자동으로 시간 표시)</div>
         </section>
       </section>
     </section>
@@ -248,12 +250,14 @@ import { computed, reactive, ref, watch, onMounted, onBeforeUnmount, nextTick } 
 import { db } from "@/firebase";
 import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 
+/** ===== Firestore doc ===== */
 const APP_COL = "jumpers_app";
 const APP_DOC = "default";
 
 let unsub = null;
 const applyingRemote = ref(false);
 
+/** ===== day ===== */
 const days = [
   { key: "mon", label: "월요일" },
   { key: "tue", label: "화요일" },
@@ -265,6 +269,7 @@ function dayLabel(k) {
   return days.find((d) => d.key === k)?.label || k;
 }
 
+/** ===== 기본노선 ===== */
 const routes = reactive({
   mon: { pickup: [], dropoff: [] },
   tue: {
@@ -291,7 +296,8 @@ const routes = reactive({
 const tab = ref("roster");
 const dayKey = ref("tue");
 
-const draft = reactive({});
+/** ✅ 통합 리스트의 draft(저장 눌러야 반영) */
+const draft = reactive({}); // key => { kind, time, place }
 
 function uid(prefix = "id") {
   return `${prefix}-${Math.random().toString(16).slice(2)}-${Date.now().toString(16)}`;
@@ -358,6 +364,7 @@ const combinedStopsSorted = computed(() => {
   return mapped.slice().sort(sortByTimeAsc);
 });
 
+/** ===== roster ===== */
 function makeEmptyAssign() {
   const out = {};
   for (const d of days) out[d.key] = { pickupPlace: "", dropoffPlace: "" };
@@ -377,11 +384,12 @@ people.value[1].assign.tue.dropoffPlace = "더샵";
 people.value[2].assign.wed.pickupPlace = "레이크시티";
 people.value[2].assign.wed.dropoffPlace = "레이크시티";
 
+/** ===== Firestore save/load ===== */
 function deepClone(v) {
   return JSON.parse(JSON.stringify(v));
 }
 
-/* ✅ 이름 가나다순(빈 이름은 "맨 위") */
+/** ✅ 이름 가나다순(빈 이름은 "맨 위") */
 function sortKoName(a, b) {
   const an = String(a?.name || "").trim();
   const bn = String(b?.name || "").trim();
@@ -403,6 +411,7 @@ function applyRoutesFromRemote(remoteRoutes) {
     const r = safe?.[dk] || {};
     const pu = Array.isArray(r.pickup) ? r.pickup : [];
     const dof = Array.isArray(r.dropoff) ? r.dropoff : [];
+
     routes[dk].pickup.splice(0, routes[dk].pickup.length, ...pu);
     routes[dk].dropoff.splice(0, routes[dk].dropoff.length, ...dof);
   }
@@ -464,6 +473,7 @@ onMounted(() => {
       try {
         if (data.routes) applyRoutesFromRemote(data.routes);
         if (data.people) applyPeopleFromRemote(data.people);
+
         ensureDraftForDay(dayKey.value);
       } finally {
         applyingRemote.value = false;
@@ -477,10 +487,12 @@ onBeforeUnmount(() => {
   if (unsub) unsub();
 });
 
+/** ✅ 행 저장 */
 const routeError = ref("");
 
 async function saveRow(row) {
   routeError.value = "";
+
   const k = row.key;
   const d = draft[k];
   if (!d) return;
@@ -524,6 +536,7 @@ async function removeStop(dk, kind, id) {
   await saveAllToFirestore();
 }
 
+/** ✅ 추가폼 */
 const addForm = reactive({ kind: "pickup", time: "", place: "" });
 
 async function addStopFromForm() {
@@ -563,6 +576,7 @@ function resetAddForm() {
   addForm.place = "";
 }
 
+/** day 변경 */
 function selectDay(k) {
   dayKey.value = k;
   ensureDraftForDay(k);
@@ -573,7 +587,7 @@ watch(
   { immediate: true }
 );
 
-/** roster: paging */
+/** ===== 명단: 검색 + 페이지 ===== */
 const nameQuery = ref("");
 const page = ref(1);
 const pageSize = 10;
@@ -582,15 +596,6 @@ function clearSearch() {
   nameQuery.value = "";
   page.value = 1;
 }
-
-/** ✅ name input ref 관리 + 방금 추가한 사람 자동 포커스 */
-const nameRefs = reactive({});
-function setNameRef(id, el) {
-  if (!id) return;
-  if (el) nameRefs[id] = el;
-  else delete nameRefs[id];
-}
-const pendingFocusId = ref("");
 
 const filteredAll = computed(() => {
   const kw = nameQuery.value.trim().toLowerCase();
@@ -603,9 +608,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(filteredAll.value.length
 
 watch(
   () => nameQuery.value,
-  () => {
-    page.value = 1;
-  }
+  () => (page.value = 1)
 );
 
 watch(
@@ -627,14 +630,20 @@ function nextPage() {
   page.value = Math.min(totalPages.value, page.value + 1);
 }
 
-/** ✅ 새 사람: 맨 위 + 1페이지로 + 이름칸 포커스 */
+/** ✅ 이름 input 포커스 refs */
+const nameRefs = reactive({});
+function setNameRef(id, el) {
+  if (!id) return;
+  if (el) nameRefs[id] = el;
+  else delete nameRefs[id];
+}
+
+/** ✅ 새 사람: 맨 위 + 1페이지 + 이름칸 자동 포커스 */
 async function addPerson() {
   const id = uid("p");
-
   people.value.unshift({ id, name: "", assign: makeEmptyAssign() });
   page.value = 1;
 
-  pendingFocusId.value = id;
   await nextTick();
   const el = nameRefs[id];
   if (el && typeof el.focus === "function") {
@@ -810,12 +819,95 @@ function autoTimeValue(day, kind, place) {
 }
 .btn.small {
   padding: 8px 10px;
-  min-width: 64px;
 }
 .btn.danger {
   border-color: rgba(255, 80, 80, 0.35);
   background: rgba(255, 80, 80, 0.12);
   color: #ffd6d6;
+}
+
+/* day tabs row */
+.row {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.daytabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.day {
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #eaf0ff;
+  cursor: pointer;
+  opacity: 0.9;
+}
+.day.active {
+  background: rgba(0, 200, 120, 0.12);
+  border-color: rgba(0, 200, 120, 0.35);
+  color: #6cffc0;
+}
+.info {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pill {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  opacity: 0.9;
+}
+.pill.soft {
+  opacity: 0.75;
+}
+
+/* add form */
+.addbox {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 16px;
+  padding: 12px;
+}
+.addgrid {
+  display: grid;
+  grid-template-columns: 160px 140px 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.lab {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.add-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.err {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #ffd6d6;
+  opacity: 0.95;
 }
 
 /* inputs */
@@ -833,32 +925,132 @@ function autoTimeValue(day, kind, place) {
 .inp:focus {
   border-color: rgba(79, 107, 255, 0.55);
 }
+
+/* dropdown readability */
 .select {
   background-color: rgba(0, 0, 0, 0.38);
   color: #eaf0ff;
   border-color: rgba(255, 255, 255, 0.18);
   color-scheme: dark;
 }
-
-.empty.big {
-  padding: 24px 10px;
-  text-align: center;
-  opacity: 0.75;
-  font-size: 12px;
+.select option {
+  background: #0e1018;
+  color: #eaf0ff;
+}
+.select option:checked {
+  background: #182047;
+  color: #eaf0ff;
 }
 
-/* roster bar */
+/* table */
+.table {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.12);
+}
+.thead,
+.trow {
+  padding: 10px;
+}
+.thead {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.trow {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.trow:last-child {
+  border-bottom: none;
+}
+.empty {
+  margin-top: 12px;
+  font-size: 12px;
+  opacity: 0.75;
+  text-align: center;
+}
+
+/* ✅ 한 줄 레이아웃 */
+.thead-inline,
+.trow-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.thead-inline {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.thead-inline span:nth-child(1) {
+  width: 110px;
+}
+.thead-inline span:nth-child(2) {
+  width: 110px;
+}
+.thead-inline span:nth-child(3) {
+  flex: 1;
+}
+.thead-inline span:nth-child(4) {
+  width: 170px;
+  text-align: right;
+}
+
+.kind {
+  width: 110px;
+}
+.time {
+  width: 110px;
+}
+.place {
+  flex: 1;
+  min-width: 0;
+}
+.actions-inline {
+  width: 170px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+/* row buttons */
+.icon {
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #eaf0ff;
+  cursor: pointer;
+}
+.icon.primary {
+  background: rgba(79, 107, 255, 0.18);
+  border-color: rgba(79, 107, 255, 0.55);
+}
+.icon.danger {
+  border-color: rgba(255, 80, 80, 0.35);
+  background: rgba(255, 80, 80, 0.12);
+  color: #ffd6d6;
+}
+
+/* ===========================
+   ✅ 명단(ROSTER) 전용 스타일
+   =========================== */
+
 .rosterbar {
   margin-top: 12px;
   display: flex;
+  justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
 }
-.searchbar {
+
+/* 검색 줄: 입력폭 줄이고, 지우기 버튼 줄바꿈 방지 */
+.search {
   display: flex;
   gap: 8px;
+  margin-bottom: 0;
   align-items: center;
 }
 .searchinp {
@@ -866,8 +1058,10 @@ function autoTimeValue(day, kind, place) {
 }
 .clearbtn {
   min-width: 68px;
+  white-space: nowrap;
 }
 
+/* pager */
 .pager {
   display: flex;
   align-items: center;
@@ -886,14 +1080,48 @@ function autoTimeValue(day, kind, place) {
   background: rgba(0, 0, 0, 0.12);
   padding: 12px;
 }
-.personhead {
+.editor-head {
   display: flex;
+  justify-content: space-between;
   gap: 10px;
-  align-items: end;
+  align-items: flex-end;
   flex-wrap: wrap;
+  margin-bottom: 12px;
 }
 .field.grow {
   flex: 1;
+}
+
+/* compact desktop */
+.compact {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+.chead,
+.crow {
+  display: grid;
+  grid-template-columns: 80px 1fr 64px 1fr 64px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+}
+.chead {
+  font-size: 11px;
+  opacity: 0.7;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.crow {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.crow:last-child {
+  border-bottom: none;
+}
+.dname {
+  font-size: 12px;
+  font-weight: 900;
 }
 
 /* tags + time chip */
@@ -928,39 +1156,7 @@ function autoTimeValue(day, kind, place) {
   min-width: 52px;
 }
 
-/* desktop compact */
-.compact {
-  margin-top: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
-}
-.chead,
-.crow {
-  display: grid;
-  grid-template-columns: 80px 1fr 64px 1fr 64px;
-  gap: 8px;
-  align-items: center;
-  padding: 10px;
-}
-.chead {
-  font-size: 11px;
-  opacity: 0.7;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-.crow {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.crow:last-child {
-  border-bottom: none;
-}
-.dname {
-  font-size: 12px;
-  font-weight: 900;
-}
-
-/* mobile compact (2 lines) */
+/* mobile compact */
 .mcompact {
   margin-top: 12px;
   display: flex;
@@ -1005,6 +1201,9 @@ function autoTimeValue(day, kind, place) {
   opacity: 0.75;
   line-height: 1.5;
 }
+.empty.big {
+  padding: 30px 10px;
+}
 .footer {
   text-align: center;
   font-size: 11px;
@@ -1013,13 +1212,46 @@ function autoTimeValue(day, kind, place) {
 }
 
 /* responsive */
+@media (max-width: 860px) {
+  /* 원본에 있던 split/dayrow 대응은 남겨둬도 무해 */
+}
+
+@media (max-width: 900px) {
+  .addgrid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .add-actions {
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 720px) {
+  .thead-inline {
+    display: none;
+  }
+  .trow-inline {
+    flex-wrap: wrap;
+  }
+  .kind,
+  .time {
+    width: calc(50% - 4px);
+  }
+  .place {
+    width: 100%;
+    flex: none;
+  }
+  .actions-inline {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .desktop-only {
     display: none;
   }
   .mobile-only {
     display: block;
   }
+
   .searchinp {
     width: 52vw;
   }
