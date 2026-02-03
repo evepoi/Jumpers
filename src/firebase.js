@@ -1,6 +1,6 @@
 // FILE: src/firebase.js
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA2PwpvEvWIaOqc-QgPwCEQAJWIssLHEvY",
@@ -14,3 +14,7 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+
+// (선택) 오프라인 캐시/동기화. GH Pages 같은 환경에서도 대체로 잘 동작.
+// 동시 탭/브라우저 정책에 따라 실패할 수 있으니 조용히 무시 처리.
+enableIndexedDbPersistence(db).catch(() => {});
