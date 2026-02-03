@@ -1,9 +1,8 @@
 name: "Deploy gh-pages"
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  push: {}
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -17,6 +16,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Debug context
+        run: |
+          echo "ref: $GITHUB_REF"
+          echo "sha: $GITHUB_SHA"
+          echo "actor: $GITHUB_ACTOR"
+          echo "repo: $GITHUB_REPOSITORY"
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -30,11 +36,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      # ✅ dist가 제대로 만들어졌는지 검증 (assets는 선택)
       - name: Verify dist output
         run: |
           set -e
-
           echo "=== dist list ==="
           ls -la dist || (echo "dist not found" && exit 1)
 
