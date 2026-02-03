@@ -1,13 +1,10 @@
-// FILE: src/router/index.js
-import { createRouter, createWebHistory } from "vue-router";
-import Home from "@/pages/Home.vue";
-import Settings from "@/pages/Settings.vue";
+import { createRouter, createWebHashHistory } from "vue-router";
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHashHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: "/", name: "home", component: Home },
-    { path: "/settings", name: "settings", component: Settings },
+    // { path: "/", component: Home },
+    // { path: "/settings", component: Settings },
   ],
 });
 
