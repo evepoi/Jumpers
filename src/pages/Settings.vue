@@ -384,13 +384,26 @@ people.value[1].assign.tue.dropoffPlace = "더샵";
 people.value[2].assign.wed.pickupPlace = "레이크시티";
 people.value[2].assign.wed.dropoffPlace = "레이크시티";
 
+/** ✅ 신규 추가한 사람: 무조건 맨 위 고정(저장/새로고침 후에도 유지되게 Firestore에 같이 저장) */
+const pinnedTopId = ref("");
+
 /** ===== Firestore save/load ===== */
 function deepClone(v) {
   return JSON.parse(JSON.stringify(v));
 }
 
-/** ✅ 이름 가나다순(빈 이름은 "맨 위") */
+/** ✅ 이름 가나다순 + pinnedTopId는 무조건 맨 위 */
 function sortKoName(a, b) {
+  const pinned = String(pinnedTopId.value || "");
+
+  const aid = String(a?.id || "");
+  const bid = String(b?.id || "");
+
+  if (pinned) {
+    if (aid === pinned && bid !== pinned) return -1;
+    if (aid !== pinned && bid === pinned) return 1;
+  }
+
   const an = String(a?.name || "").trim();
   const bn = String(b?.name || "").trim();
 
@@ -400,7 +413,7 @@ function sortKoName(a, b) {
   if (aEmpty && !bEmpty) return -1;
   if (!aEmpty && bEmpty) return 1;
 
-  if (aEmpty && bEmpty) return String(a?.id || "").localeCompare(String(b?.id || ""));
+  if (aEmpty && bEmpty) return aid.localeCompare(bid);
   return an.localeCompare(bn, "ko");
 }
 
@@ -444,6 +457,10 @@ function applyPeopleFromRemote(remotePeople) {
 async function saveAllToFirestore() {
   if (applyingRemote.value) return;
 
+  // pinnedTopId가 실제로 존재하는 id인지 확인(없으면 초기화)
+  const pinned = String(pinnedTopId.value || "");
+  if (pinned && !people.value.some((p) => String(p.id) === pinned)) pinnedTopId.value = "";
+
   const cleanedPeople = people.value.map((p) => ({
     id: String(p.id || uid("p")),
     name: String(p.name || ""),
@@ -453,6 +470,7 @@ async function saveAllToFirestore() {
   const payload = {
     routes: deepClone(routes),
     people: cleanedPeople,
+    pinnedTopId: String(pinnedTopId.value || ""),
     updatedAt: serverTimestamp(),
     savedAt: Date.now(),
   };
@@ -471,6 +489,9 @@ onMounted(() => {
 
       applyingRemote.value = true;
       try {
+        // ✅ pinned 먼저 적용(정렬에 영향)
+        pinnedTopId.value = typeof data.pinnedTopId === "string" ? data.pinnedTopId : "";
+
         if (data.routes) applyRoutesFromRemote(data.routes);
         if (data.people) applyPeopleFromRemote(data.people);
 
@@ -638,24 +659,64 @@ function setNameRef(id, el) {
   else delete nameRefs[id];
 }
 
-/** ✅ 새 사람: 맨 위 + 1페이지 + 이름칸 자동 포커스 */
+/** ✅ 방금 추가한 사람 id 추적(이름 입력하면 검색창 자동 입력용) */
+const newlyAddedId = ref("");
+
+/** ✅ 새 사람: 맨 위 + 1페이지 + 이름칸 자동 포커스
+ *  + ✅ 방금 만든 사람을 검색창에 자동 입력해서 "바로 표시"
+ *  + ✅ 신규는 무조건 맨 위 고정(pinnedTopId)
+ */
 async function addPerson() {
   const id = uid("p");
-  people.value.unshift({ id, name: "", assign: makeEmptyAssign() });
+  const newPerson = { id, name: "", assign: makeEmptyAssign() };
+
+  // (1) 맨 위에 추가
+  people.value.unshift(newPerson);
+
+  // (2) ✅ 신규 무조건 맨 위 고정
+  pinnedTopId.value = id;
+
+  // (3) 페이지/탭 고정
   page.value = 1;
+  tab.value = "roster";
 
   await nextTick();
+
+  // (4) 이름칸 포커스
   const el = nameRefs[id];
   if (el && typeof el.focus === "function") {
     el.focus();
     if (typeof el.select === "function") el.select();
   }
+
+  // (5) ✅ 이름 입력되면 검색어 자동 세팅
+  newlyAddedId.value = id;
+  nameQuery.value = "";
 }
+
+/** ✅ 방금 추가한 사람 이름을 입력하면, 검색창에 자동으로 그 이름을 넣어 "바로 표시" */
+watch(
+  () => people.value.find((p) => p.id === newlyAddedId.value)?.name,
+  (nm) => {
+    if (!newlyAddedId.value) return;
+    const v = String(nm || "").trim();
+    if (v) {
+      nameQuery.value = v;
+      page.value = 1;
+      newlyAddedId.value = "";
+    }
+  }
+);
 
 async function removePerson(id) {
   const i = people.value.findIndex((p) => p.id === id);
   if (i >= 0) {
     people.value.splice(i, 1);
+
+    if (String(pinnedTopId.value || "") === String(id)) {
+      pinnedTopId.value = "";
+    }
+
     await saveAllToFirestore();
   }
 }
