@@ -56,7 +56,6 @@
           </div>
         </div>
 
-        <!-- ✅ 간단 추가폼 -->
         <div class="addbox">
           <div class="addgrid">
             <label class="field">
@@ -88,7 +87,6 @@
           <p v-if="routeError" class="err">{{ routeError }}</p>
         </div>
 
-        <!-- ✅ 통합 리스트(시간순) : 한 줄로 -->
         <div class="table">
           <div class="thead thead-inline">
             <span>승/하차</span>
@@ -116,12 +114,12 @@
         </div>
       </section>
 
-      <!-- ===== 명단 ===== -->
+      <!-- ===== 명단 (10명 페이지 + 데스크탑 1줄 / 모바일 2줄) ===== -->
       <section v-else class="card roster">
         <header class="card-head">
           <div>
             <h2 class="h2">명단</h2>
-            <p class="hint">사람 추가/검색/수정 · 요일별 “장소만” 선택(시간은 자동 표시)</p>
+            <p class="hint">이름 가나다순 · 10명 단위 페이지 · 모바일은 승차/하차 2줄</p>
           </div>
 
           <div class="actions">
@@ -130,83 +128,114 @@
           </div>
         </header>
 
-        <div class="split">
-          <!-- LEFT -->
-          <aside class="left">
-            <div class="search">
-              <input class="inp" v-model="nameQuery" placeholder="이름 검색" />
-              <button class="btn small" type="button" @click="nameQuery = ''" :disabled="!nameQuery">지우기</button>
-            </div>
+        <div class="rosterbar">
+          <div class="searchbar">
+            <input class="inp searchinp" v-model="nameQuery" placeholder="이름 검색" />
+            <button class="btn small clearbtn" type="button" @click="clearSearch" :disabled="!nameQuery">
+              지우기
+            </button>
+          </div>
 
-            <div class="list">
-              <button
-                v-for="p in filteredPeople"
-                :key="p.id"
-                class="person"
-                :class="{ active: selectedId === p.id }"
-                type="button"
-                @click="selectedId = p.id"
-              >
-                <div class="pname">{{ p.name || "(이름없음)" }}</div>
-                <div class="psub">요일별 승/하차 장소 배정</div>
-              </button>
-            </div>
-          </aside>
-
-          <!-- RIGHT -->
-          <section class="rightpane" v-if="selectedPerson">
-            <div class="editor-head">
-              <div class="field">
-                <span class="lab">이름</span>
-                <input class="inp" v-model="selectedPerson.name" placeholder="예) 김준영" />
-              </div>
-
-              <button class="btn danger" type="button" @click="removePerson(selectedPerson.id)">명단 삭제</button>
-            </div>
-
-            <div class="grid">
-              <div v-for="d in days" :key="d.key" class="dayrow">
-                <div class="dtitle">{{ d.label }}</div>
-
-                <!-- 승차 -->
-                <div class="slot">
-                  <div class="slot-head">
-                    <span class="tag pickup">승차</span>
-                    <span class="auto">{{ autoTime(d.key, 'pickup', selectedPerson.assign[d.key]?.pickupPlace) }}</span>
-                  </div>
-
-                  <select class="inp select" v-model="selectedPerson.assign[d.key].pickupPlace">
-                    <option value="">(미배정)</option>
-                    <option v-for="opt in placeOptions(d.key, 'pickup')" :key="opt.place" :value="opt.place">
-                      {{ opt.place }}
-                    </option>
-                  </select>
-                </div>
-
-                <!-- 하차 -->
-                <div class="slot">
-                  <div class="slot-head">
-                    <span class="tag dropoff">하차</span>
-                    <span class="auto">{{ autoTime(d.key, 'dropoff', selectedPerson.assign[d.key]?.dropoffPlace) }}</span>
-                  </div>
-
-                  <select class="inp select" v-model="selectedPerson.assign[d.key].dropoffPlace">
-                    <option value="">(미배정)</option>
-                    <option v-for="opt in placeOptions(d.key, 'dropoff')" :key="opt.place" :value="opt.place">
-                      {{ opt.place }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div class="note">시간은 입력하지 않습니다. (요일 + 장소가 기본노선과 매칭되면 자동으로 시간 표시)</div>
-          </section>
-
-          <section class="rightpane" v-else>
-            <div class="empty big">왼쪽에서 사람을 선택하거나 “+ 사람 추가”를 눌러주세요.</div>
-          </section>
+          <div class="pager" v-if="totalPages > 1">
+            <button class="btn small" type="button" @click="prevPage" :disabled="page === 1">이전</button>
+            <span class="ptext">{{ page }} / {{ totalPages }}</span>
+            <button class="btn small" type="button" @click="nextPage" :disabled="page === totalPages">다음</button>
+          </div>
         </div>
+
+        <div v-if="pagedPeople.length === 0" class="empty big">검색 결과가 없습니다.</div>
+
+        <section v-for="p in pagedPeople" :key="p.id" class="personcard">
+          <div class="personhead">
+            <div class="field grow">
+              <span class="lab">이름</span>
+              <input
+                class="inp"
+                :ref="(el) => setNameRef(p.id, el)"
+                v-model="p.name"
+                placeholder="예) 김준영"
+              />
+            </div>
+
+            <button class="btn danger" type="button" @click="removePerson(p.id)">삭제</button>
+          </div>
+
+          <!-- 데스크탑/태블릿: 1줄 -->
+          <div class="compact desktop-only">
+            <div class="chead">
+              <span class="cday">요일</span>
+              <span class="cpick">승차</span>
+              <span class="ctime">시간</span>
+              <span class="cdrop">하차</span>
+              <span class="ctime">시간</span>
+            </div>
+
+            <div v-for="d in days" :key="d.key" class="crow">
+              <div class="cday">
+                <span class="dname">{{ d.label }}</span>
+              </div>
+
+              <div class="cpick">
+                <select class="inp select" v-model="p.assign[d.key].pickupPlace">
+                  <option value="">(미배정)</option>
+                  <option v-for="opt in placeOptions(d.key, 'pickup')" :key="opt.place" :value="opt.place">
+                    {{ opt.place }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="ctime">
+                <span class="tchip">{{ autoTimeValue(d.key, "pickup", p.assign[d.key]?.pickupPlace) }}</span>
+              </div>
+
+              <div class="cdrop">
+                <select class="inp select" v-model="p.assign[d.key].dropoffPlace">
+                  <option value="">(미배정)</option>
+                  <option v-for="opt in placeOptions(d.key, 'dropoff')" :key="opt.place" :value="opt.place">
+                    {{ opt.place }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="ctime">
+                <span class="tchip">{{ autoTimeValue(d.key, "dropoff", p.assign[d.key]?.dropoffPlace) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 모바일: 2줄(승차 줄 / 하차 줄) -->
+          <div class="mcompact mobile-only">
+            <div v-for="d in days" :key="d.key" class="mday">
+              <div class="mday-head">
+                <span class="dname">{{ d.label }}</span>
+              </div>
+
+              <div class="mline">
+                <span class="tag pickup">승차</span>
+                <select class="inp select msel" v-model="p.assign[d.key].pickupPlace">
+                  <option value="">(미배정)</option>
+                  <option v-for="opt in placeOptions(d.key, 'pickup')" :key="opt.place" :value="opt.place">
+                    {{ opt.place }}
+                  </option>
+                </select>
+                <span class="tchip mt">{{ autoTimeValue(d.key, "pickup", p.assign[d.key]?.pickupPlace) }}</span>
+              </div>
+
+              <div class="mline">
+                <span class="tag dropoff">하차</span>
+                <select class="inp select msel" v-model="p.assign[d.key].dropoffPlace">
+                  <option value="">(미배정)</option>
+                  <option v-for="opt in placeOptions(d.key, 'dropoff')" :key="opt.place" :value="opt.place">
+                    {{ opt.place }}
+                  </option>
+                </select>
+                <span class="tchip mt">{{ autoTimeValue(d.key, "dropoff", p.assign[d.key]?.dropoffPlace) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="note">시간은 입력하지 않습니다. (요일 + 장소가 기본노선과 매칭되면 자동 표시)</div>
+        </section>
       </section>
     </section>
 
@@ -215,18 +244,16 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { computed, reactive, ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { db } from "@/firebase";
 import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 
-/** ===== Firestore doc ===== */
 const APP_COL = "jumpers_app";
 const APP_DOC = "default";
 
 let unsub = null;
 const applyingRemote = ref(false);
 
-/** ===== day ===== */
 const days = [
   { key: "mon", label: "월요일" },
   { key: "tue", label: "화요일" },
@@ -238,7 +265,6 @@ function dayLabel(k) {
   return days.find((d) => d.key === k)?.label || k;
 }
 
-/** ===== 기본노선 ===== */
 const routes = reactive({
   mon: { pickup: [], dropoff: [] },
   tue: {
@@ -265,8 +291,7 @@ const routes = reactive({
 const tab = ref("roster");
 const dayKey = ref("tue");
 
-/** ✅ 통합 리스트의 draft(저장 눌러야 반영) */
-const draft = reactive({}); // key => { kind, time, place }
+const draft = reactive({});
 
 function uid(prefix = "id") {
   return `${prefix}-${Math.random().toString(16).slice(2)}-${Date.now().toString(16)}`;
@@ -333,7 +358,6 @@ const combinedStopsSorted = computed(() => {
   return mapped.slice().sort(sortByTimeAsc);
 });
 
-/** ===== roster ===== */
 function makeEmptyAssign() {
   const out = {};
   for (const d of days) out[d.key] = { pickupPlace: "", dropoffPlace: "" };
@@ -353,9 +377,23 @@ people.value[1].assign.tue.dropoffPlace = "더샵";
 people.value[2].assign.wed.pickupPlace = "레이크시티";
 people.value[2].assign.wed.dropoffPlace = "레이크시티";
 
-/** ===== Firestore save/load ===== */
 function deepClone(v) {
   return JSON.parse(JSON.stringify(v));
+}
+
+/* ✅ 이름 가나다순(빈 이름은 "맨 위") */
+function sortKoName(a, b) {
+  const an = String(a?.name || "").trim();
+  const bn = String(b?.name || "").trim();
+
+  const aEmpty = !an;
+  const bEmpty = !bn;
+
+  if (aEmpty && !bEmpty) return -1;
+  if (!aEmpty && bEmpty) return 1;
+
+  if (aEmpty && bEmpty) return String(a?.id || "").localeCompare(String(b?.id || ""));
+  return an.localeCompare(bn, "ko");
 }
 
 function applyRoutesFromRemote(remoteRoutes) {
@@ -365,7 +403,6 @@ function applyRoutesFromRemote(remoteRoutes) {
     const r = safe?.[dk] || {};
     const pu = Array.isArray(r.pickup) ? r.pickup : [];
     const dof = Array.isArray(r.dropoff) ? r.dropoff : [];
-
     routes[dk].pickup.splice(0, routes[dk].pickup.length, ...pu);
     routes[dk].dropoff.splice(0, routes[dk].dropoff.length, ...dof);
   }
@@ -374,7 +411,6 @@ function applyRoutesFromRemote(remoteRoutes) {
 function applyPeopleFromRemote(remotePeople) {
   if (!Array.isArray(remotePeople)) return;
 
-  // assign 누락/깨짐 방어
   const fixed = remotePeople.map((p) => {
     const assign = p?.assign && typeof p.assign === "object" ? p.assign : {};
     const safeAssign = makeEmptyAssign();
@@ -393,14 +429,12 @@ function applyPeopleFromRemote(remotePeople) {
     };
   });
 
-  people.value = fixed;
-  if (!fixed.find((x) => x.id === selectedId.value)) selectedId.value = fixed[0]?.id || "";
+  people.value = fixed.slice().sort(sortKoName);
 }
 
 async function saveAllToFirestore() {
   if (applyingRemote.value) return;
 
-  // people 정리(비정상 값 방어)
   const cleanedPeople = people.value.map((p) => ({
     id: String(p.id || uid("p")),
     name: String(p.name || ""),
@@ -414,7 +448,6 @@ async function saveAllToFirestore() {
     savedAt: Date.now(),
   };
 
-  // ✅ merge:true : 문서 유지하면서 routes/people 갱신
   await setDoc(doc(db, APP_COL, APP_DOC), payload, { merge: true });
 }
 
@@ -431,16 +464,12 @@ onMounted(() => {
       try {
         if (data.routes) applyRoutesFromRemote(data.routes);
         if (data.people) applyPeopleFromRemote(data.people);
-
-        // draft는 UI용이니 remote 반영 후 갱신
         ensureDraftForDay(dayKey.value);
       } finally {
         applyingRemote.value = false;
       }
     },
-    (err) => {
-      console.error("[Firestore] onSnapshot error:", err);
-    }
+    (err) => console.error("[Firestore] onSnapshot error:", err)
   );
 });
 
@@ -448,12 +477,10 @@ onBeforeUnmount(() => {
   if (unsub) unsub();
 });
 
-/** ✅ 행 저장 */
 const routeError = ref("");
 
 async function saveRow(row) {
   routeError.value = "";
-
   const k = row.key;
   const d = draft[k];
   if (!d) return;
@@ -471,17 +498,14 @@ async function saveRow(row) {
     return;
   }
 
-  // 기존 배열에서 제거
   const oldArr = routes?.[dayKey.value]?.[row.kind] || [];
   const idx = oldArr.findIndex((x) => x.id === row.id);
   if (idx >= 0) oldArr.splice(idx, 1);
 
-  // 새 kind로 추가(이동 포함)
   const newArr = routes?.[dayKey.value]?.[newKind] || [];
   newArr.push({ id: row.id, time: newTime, place: newPlace });
   newArr.sort(sortByTimeAsc);
 
-  // draft key 교체
   const newKey = makeRowKey(dayKey.value, newKind, row.id);
   delete draft[k];
   draft[newKey] = { kind: newKind, time: newTime, place: newPlace };
@@ -494,14 +518,12 @@ async function removeStop(dk, kind, id) {
   const i = arr.findIndex((x) => x.id === id);
   if (i >= 0) arr.splice(i, 1);
 
-  // draft 정리
   const k = makeRowKey(dk, kind, id);
   if (draft[k]) delete draft[k];
 
   await saveAllToFirestore();
 }
 
-/** ✅ 추가폼 */
 const addForm = reactive({ kind: "pickup", time: "", place: "" });
 
 async function addStopFromForm() {
@@ -525,7 +547,6 @@ async function addStopFromForm() {
   arr.push({ id, time, place });
   arr.sort(sortByTimeAsc);
 
-  // draft도 생성
   const key = makeRowKey(dayKey.value, kind, id);
   draft[key] = { kind, time, place };
 
@@ -542,7 +563,6 @@ function resetAddForm() {
   addForm.place = "";
 }
 
-/** day 변경 */
 function selectDay(k) {
   dayKey.value = k;
   ensureDraftForDay(k);
@@ -553,29 +573,80 @@ watch(
   { immediate: true }
 );
 
-/** roster ui */
+/** roster: paging */
 const nameQuery = ref("");
-const selectedId = ref(people.value[0]?.id || "");
+const page = ref(1);
+const pageSize = 10;
 
-const filteredPeople = computed(() => {
+function clearSearch() {
+  nameQuery.value = "";
+  page.value = 1;
+}
+
+/** ✅ name input ref 관리 + 방금 추가한 사람 자동 포커스 */
+const nameRefs = reactive({});
+function setNameRef(id, el) {
+  if (!id) return;
+  if (el) nameRefs[id] = el;
+  else delete nameRefs[id];
+}
+const pendingFocusId = ref("");
+
+const filteredAll = computed(() => {
   const kw = nameQuery.value.trim().toLowerCase();
-  if (!kw) return people.value;
-  return people.value.filter((p) => String(p.name || "").toLowerCase().includes(kw));
+  const base = people.value.slice().sort(sortKoName);
+  if (!kw) return base;
+  return base.filter((p) => String(p.name || "").toLowerCase().includes(kw));
 });
 
-const selectedPerson = computed(() => people.value.find((p) => p.id === selectedId.value) || null);
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredAll.value.length / pageSize)));
 
-function addPerson() {
+watch(
+  () => nameQuery.value,
+  () => {
+    page.value = 1;
+  }
+);
+
+watch(
+  () => filteredAll.value.length,
+  () => {
+    if (page.value > totalPages.value) page.value = totalPages.value;
+  }
+);
+
+const pagedPeople = computed(() => {
+  const start = (page.value - 1) * pageSize;
+  return filteredAll.value.slice(start, start + pageSize);
+});
+
+function prevPage() {
+  page.value = Math.max(1, page.value - 1);
+}
+function nextPage() {
+  page.value = Math.min(totalPages.value, page.value + 1);
+}
+
+/** ✅ 새 사람: 맨 위 + 1페이지로 + 이름칸 포커스 */
+async function addPerson() {
   const id = uid("p");
+
   people.value.unshift({ id, name: "", assign: makeEmptyAssign() });
-  selectedId.value = id;
+  page.value = 1;
+
+  pendingFocusId.value = id;
+  await nextTick();
+  const el = nameRefs[id];
+  if (el && typeof el.focus === "function") {
+    el.focus();
+    if (typeof el.select === "function") el.select();
+  }
 }
 
 async function removePerson(id) {
   const i = people.value.findIndex((p) => p.id === id);
   if (i >= 0) {
     people.value.splice(i, 1);
-    selectedId.value = people.value[0]?.id || "";
     await saveAllToFirestore();
   }
 }
@@ -596,11 +667,11 @@ function placeOptions(day, kind) {
     .map((s) => ({ place: s.place }));
 }
 
-function autoTime(day, kind, place) {
-  if (!place) return "시간: —";
+function autoTimeValue(day, kind, place) {
+  if (!place) return "—";
   const arr = routes?.[day]?.[kind] || [];
   const found = arr.find((s) => String(s.place) === String(place));
-  return found?.time ? `시간: ${found.time}` : "시간: —";
+  return found?.time || "—";
 }
 </script>
 
@@ -728,6 +799,7 @@ function autoTime(day, kind, place) {
   background: rgba(0, 0, 0, 0.18);
   color: #eaf0ff;
   cursor: pointer;
+  white-space: nowrap;
 }
 .btn:hover {
   background: rgba(255, 255, 255, 0.06);
@@ -738,95 +810,12 @@ function autoTime(day, kind, place) {
 }
 .btn.small {
   padding: 8px 10px;
+  min-width: 64px;
 }
 .btn.danger {
   border-color: rgba(255, 80, 80, 0.35);
   background: rgba(255, 80, 80, 0.12);
   color: #ffd6d6;
-}
-
-/* day tabs row */
-.row {
-  margin-top: 12px;
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-.daytabs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.day {
-  font-size: 12px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  color: #eaf0ff;
-  cursor: pointer;
-  opacity: 0.9;
-}
-.day.active {
-  background: rgba(0, 200, 120, 0.12);
-  border-color: rgba(0, 200, 120, 0.35);
-  color: #6cffc0;
-}
-.info {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.pill {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  opacity: 0.9;
-}
-.pill.soft {
-  opacity: 0.75;
-}
-
-/* add form */
-.addbox {
-  margin-top: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.14);
-  border-radius: 16px;
-  padding: 12px;
-}
-.addgrid {
-  display: grid;
-  grid-template-columns: 160px 140px 1fr auto;
-  gap: 10px;
-  align-items: end;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-}
-.lab {
-  font-size: 11px;
-  opacity: 0.75;
-}
-.add-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-
-.err {
-  margin: 10px 0 0;
-  font-size: 12px;
-  color: #ffd6d6;
-  opacity: 0.95;
 }
 
 /* inputs */
@@ -844,213 +833,70 @@ function autoTime(day, kind, place) {
 .inp:focus {
   border-color: rgba(79, 107, 255, 0.55);
 }
-
-/* dropdown readability */
 .select {
   background-color: rgba(0, 0, 0, 0.38);
   color: #eaf0ff;
   border-color: rgba(255, 255, 255, 0.18);
   color-scheme: dark;
 }
-.select option {
-  background: #0e1018;
-  color: #eaf0ff;
-}
-.select option:checked {
-  background: #182047;
-  color: #eaf0ff;
-}
 
-/* table */
-.table {
-  margin-top: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.12);
-}
-.thead,
-.trow {
-  padding: 10px;
-}
-.thead {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-.trow {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.trow:last-child {
-  border-bottom: none;
-}
-.empty {
-  margin-top: 12px;
-  font-size: 12px;
-  opacity: 0.75;
+.empty.big {
+  padding: 24px 10px;
   text-align: center;
+  opacity: 0.75;
+  font-size: 12px;
 }
 
-/* ✅ 한 줄 레이아웃 */
-.thead-inline,
-.trow-inline {
+/* roster bar */
+.rosterbar {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+.searchbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.searchinp {
+  width: min(220px, 60vw);
+}
+.clearbtn {
+  min-width: 68px;
+}
+
+.pager {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.thead-inline {
-  font-size: 11px;
-  opacity: 0.7;
-}
-.thead-inline span:nth-child(1) {
-  width: 110px;
-}
-.thead-inline span:nth-child(2) {
-  width: 110px;
-}
-.thead-inline span:nth-child(3) {
-  flex: 1;
-}
-.thead-inline span:nth-child(4) {
-  width: 170px;
-  text-align: right;
-}
-
-.kind {
-  width: 110px;
-}
-.time {
-  width: 110px;
-}
-.place {
-  flex: 1;
-  min-width: 0;
-}
-.actions-inline {
-  width: 170px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  flex-wrap: nowrap;
-}
-
-/* row buttons */
-.icon {
+.ptext {
   font-size: 12px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  color: #eaf0ff;
-  cursor: pointer;
-}
-.icon.primary {
-  background: rgba(79, 107, 255, 0.18);
-  border-color: rgba(79, 107, 255, 0.55);
-}
-.icon.danger {
-  border-color: rgba(255, 80, 80, 0.35);
-  background: rgba(255, 80, 80, 0.12);
-  color: #ffd6d6;
+  opacity: 0.8;
 }
 
-/* roster split */
-.split {
+/* person card */
+.personcard {
   margin-top: 12px;
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 12px;
-}
-.left {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  background: rgba(0, 0, 0, 0.12);
-  padding: 10px;
-}
-.search {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.person {
-  width: 100%;
-  text-align: left;
-  border-radius: 14px;
-  padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: #eaf0ff;
-  cursor: pointer;
-}
-.person.active {
-  background: rgba(79, 107, 255, 0.18);
-  border-color: rgba(79, 107, 255, 0.55);
-}
-.pname {
-  font-size: 13px;
-  font-weight: 900;
-}
-.psub {
-  margin-top: 4px;
-  font-size: 11px;
-  opacity: 0.75;
-}
-
-.rightpane {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   background: rgba(0, 0, 0, 0.12);
   padding: 12px;
 }
-.editor-head {
+.personhead {
   display: flex;
-  justify-content: space-between;
   gap: 10px;
-  align-items: flex-end;
+  align-items: end;
   flex-wrap: wrap;
-  margin-bottom: 12px;
 }
-.grid {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.dayrow {
-  display: grid;
-  grid-template-columns: 90px 1fr 1fr;
-  gap: 10px;
-  align-items: start;
-  padding: 10px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-}
-.dtitle {
-  font-size: 12px;
-  font-weight: 900;
-  opacity: 0.9;
-  padding-top: 6px;
+.field.grow {
+  flex: 1;
 }
 
-.slot {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.slot-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-.auto {
-  font-size: 11px;
-  opacity: 0.75;
-}
-
+/* tags + time chip */
 .tag {
   font-size: 11px;
   padding: 3px 8px;
@@ -1066,17 +912,99 @@ function autoTime(day, kind, place) {
   background: rgba(255, 159, 67, 0.16);
   border-color: rgba(255, 159, 67, 0.45);
 }
+.tchip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  opacity: 0.9;
+  padding: 0 10px;
+}
+.tchip.mt {
+  min-width: 52px;
+}
 
+/* desktop compact */
+.compact {
+  margin-top: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+.chead,
+.crow {
+  display: grid;
+  grid-template-columns: 80px 1fr 64px 1fr 64px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+}
+.chead {
+  font-size: 11px;
+  opacity: 0.7;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.crow {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.crow:last-child {
+  border-bottom: none;
+}
+.dname {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+/* mobile compact (2 lines) */
+.mcompact {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mday {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+}
+.mday-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.mline {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.msel {
+  min-width: 0;
+}
+
+/* show/hide */
+.desktop-only {
+  display: block;
+}
+.mobile-only {
+  display: none;
+}
+
+/* note/footer */
 .note {
   margin-top: 12px;
   font-size: 12px;
   opacity: 0.75;
   line-height: 1.5;
 }
-.empty.big {
-  padding: 30px 10px;
-}
-
 .footer {
   text-align: center;
   font-size: 11px;
@@ -1085,42 +1013,23 @@ function autoTime(day, kind, place) {
 }
 
 /* responsive */
-@media (max-width: 860px) {
-  .split {
-    grid-template-columns: 1fr;
-  }
-  .dayrow {
-    grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 900px) {
-  .addgrid {
-    grid-template-columns: 1fr 1fr;
-  }
-  .add-actions {
-    justify-content: flex-start;
-  }
-}
-
-/* ✅ 모바일에서는 한 줄이 빡빡하면 자연스럽게 2줄 */
 @media (max-width: 720px) {
-  .thead-inline {
+  .desktop-only {
     display: none;
   }
-  .trow-inline {
-    flex-wrap: wrap;
+  .mobile-only {
+    display: block;
   }
-  .kind,
-  .time {
-    width: calc(50% - 4px);
+  .searchinp {
+    width: 52vw;
   }
-  .place {
-    width: 100%;
-    flex: none;
+  .tchip {
+    height: 34px;
+    font-size: 11px;
+    padding: 0 8px;
   }
-  .actions-inline {
-    width: 100%;
-    justify-content: flex-end;
+  .tchip.mt {
+    min-width: 46px;
   }
 }
 </style>
