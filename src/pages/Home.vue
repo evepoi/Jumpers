@@ -33,15 +33,7 @@
           </div>
 
           <div class="controls">
-            <div class="mode">
-              <button class="mode-btn" :class="{ active: mode === 'pickup' }" @click="mode = 'pickup'">
-                승차
-              </button>
-              <button class="mode-btn" :class="{ active: mode === 'dropoff' }" @click="mode = 'dropoff'">
-                하차
-              </button>
-            </div>
-
+            <!-- ✅ 승차/하차 토글 제거: 카드 안에서 승차/하차 뱃지로 구분 -->
             <div class="dayseg">
               <button
                 v-for="d in dayTabs"
@@ -81,18 +73,23 @@
           <div class="day-body">
             <!-- 진행 -->
             <ul class="timeline">
-              <li v-for="st in pendingStopsFor(d.dayKey, d.shift)" :key="st.id" class="stop">
+              <li v-for="st in pendingStopsFor(d.dayKey, d.shift)" :key="st.kind + ':' + st.id" class="stop">
                 <div class="stop-left">
                   <div class="time">{{ st.time }}</div>
-                  <div class="place">{{ st.place }}</div>
+                  <div class="place">
+                    <span class="tag" :class="st.kind === 'pickup' ? 'tag-pickup' : 'tag-dropoff'">
+                      {{ st.kind === "pickup" ? "승차" : "하차" }}
+                    </span>
+                    <span class="place-text">{{ st.place }}</span>
+                  </div>
                 </div>
 
                 <div class="stop-right">
                   <div class="names">
-                    <span v-for="(nm, i) in namesAt(d.dayKey, d.shift, st.id)" :key="nm + i" class="name">
+                    <span v-for="(nm, i) in namesAt(d.dayKey, d.shift, st.kind, st.id)" :key="nm + i" class="name">
                       {{ nm }}
                     </span>
-                    <span v-if="namesAt(d.dayKey, d.shift, st.id).length === 0" class="empty2">—</span>
+                    <span v-if="namesAt(d.dayKey, d.shift, st.kind, st.id).length === 0" class="empty2">—</span>
                   </div>
 
                   <button
@@ -100,7 +97,7 @@
                     type="button"
                     :disabled="!canCompleteToday(d.isoYmd)"
                     :class="{ disabled: !canCompleteToday(d.isoYmd) }"
-                    @click="markDone(d.dayKey, st.id)"
+                    @click="markDone(d.dayKey, st.kind, st.id)"
                   >
                     완료
                   </button>
@@ -122,32 +119,37 @@
               <ul class="timeline done">
                 <li
                   v-for="st in completedStopsFor(d.dayKey, d.shift)"
-                  :key="'done:' + st.id"
+                  :key="'done:' + st.kind + ':' + st.id"
                   class="stop done-card"
                 >
                   <div class="stop-left">
                     <div class="time">{{ st.time }}</div>
-                    <div class="place">{{ st.place }}</div>
+                    <div class="place">
+                      <span class="tag" :class="st.kind === 'pickup' ? 'tag-pickup' : 'tag-dropoff'">
+                        {{ st.kind === "pickup" ? "승차" : "하차" }}
+                      </span>
+                      <span class="place-text">{{ st.place }}</span>
+                    </div>
                   </div>
 
                   <div class="stop-right">
                     <div class="names">
                       <span
-                        v-for="(nm, i) in namesAt(d.dayKey, d.shift, st.id)"
+                        v-for="(nm, i) in namesAt(d.dayKey, d.shift, st.kind, st.id)"
                         :key="'d' + nm + i"
                         class="name"
                       >
                         {{ nm }}
                       </span>
-                      <span v-if="namesAt(d.dayKey, d.shift, st.id).length === 0" class="empty2">—</span>
+                      <span v-if="namesAt(d.dayKey, d.shift, st.kind, st.id).length === 0" class="empty2">—</span>
                     </div>
 
                     <div class="done-actions">
                       <span class="countdown" :title="'10분 카운터'">
-                        {{ countdownText(d.dayKey, st.id) }}
+                        {{ countdownText(d.dayKey, st.kind, st.id) }}
                       </span>
 
-                      <button class="done-btn cancel" type="button" @click="undoDone(d.dayKey, st.id)">
+                      <button class="done-btn cancel" type="button" @click="undoDone(d.dayKey, st.kind, st.id)">
                         완료취소
                       </button>
                     </div>
@@ -211,7 +213,9 @@ const nowKst = computed(() => {
 });
 
 const todayLabel = computed(() => {
-  const wd = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", weekday: "long" }).format(new Date(tick.value));
+  const wd = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", weekday: "long" }).format(
+    new Date(tick.value)
+  );
   const ymd = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
@@ -327,7 +331,6 @@ const dayCards = computed(() => {
 const dayTabs = computed(() => [{ key: "all", label: "전체" }, ...baseDays.map((d) => ({ key: d.key, label: d.label }))]);
 
 /** ===== UI state ===== */
-const mode = ref("pickup");
 const selectedDay = ref("all");
 const q = ref("");
 
@@ -338,8 +341,8 @@ function sortByTimeAsc(a, b) {
   return ah * 60 + am - (bh * 60 + bm);
 }
 
-/** ✅ "명단 배정된 stop만 노출" 유지 */
-const assignedCountByDayModePlace = computed(() => {
+/** ✅ "명단 배정된 stop만 노출" 유지 (승차/하차 각각 카운트) */
+const assignedCountByDayKindPlace = computed(() => {
   const out = {
     pickup: { mon: {}, tue: {}, wed: {}, thu: {}, fri: {} },
     dropoff: { mon: {}, tue: {}, wed: {}, thu: {}, fri: {} },
@@ -361,62 +364,72 @@ const assignedCountByDayModePlace = computed(() => {
   return out;
 });
 
+/** ✅ 한 요일 카드에서 승차/하차를 "하나의 타임라인"으로 합치고 시간순 정렬 */
 function allStopsFor(dayKey) {
   if (!Array.isArray(roster.value) || roster.value.length === 0) return [];
 
-  const arr = Array.isArray(routes.value?.[dayKey]?.[mode.value]) ? routes.value[dayKey][mode.value] : [];
-  const sorted = [...arr].sort(sortByTimeAsc);
+  const puArr = Array.isArray(routes.value?.[dayKey]?.pickup) ? routes.value[dayKey].pickup : [];
+  const doArr = Array.isArray(routes.value?.[dayKey]?.dropoff) ? routes.value[dayKey].dropoff : [];
 
-  const counts = assignedCountByDayModePlace.value?.[mode.value]?.[dayKey] || {};
-  return sorted.filter((s) => (counts[String(s.place || "")] || 0) > 0);
+  const puCounts = assignedCountByDayKindPlace.value?.pickup?.[dayKey] || {};
+  const doCounts = assignedCountByDayKindPlace.value?.dropoff?.[dayKey] || {};
+
+  const pu = [...puArr]
+    .sort(sortByTimeAsc)
+    .filter((s) => (puCounts[String(s.place || "")] || 0) > 0)
+    .map((s) => ({ ...s, kind: "pickup" }));
+
+  const dof = [...doArr]
+    .sort(sortByTimeAsc)
+    .filter((s) => (doCounts[String(s.place || "")] || 0) > 0)
+    .map((s) => ({ ...s, kind: "dropoff" }));
+
+  return [...pu, ...dof].sort(sortByTimeAsc);
 }
 
 /** =========================
- * ✅ NEW STATE MODEL
+ * ✅ NEW STATE MODEL (kind 포함)
  * items["pickup:tue:stopId"] = { shift: 0, doneAt: number|null }
  * ========================= */
 const items = ref({}); // key -> {shift, doneAt}
 
 /** key helpers */
-function itemKey(dayKey, stopId) {
-  return `${mode.value}:${dayKey}:${stopId}`;
+function itemKey(dayKey, kind, stopId) {
+  return `${kind}:${dayKey}:${stopId}`;
 }
-function ensureItem(dayKey, stopId) {
-  const k = itemKey(dayKey, stopId);
+function ensureItem(dayKey, kind, stopId) {
+  const k = itemKey(dayKey, kind, stopId);
   if (!items.value[k]) items.value[k] = { shift: 0, doneAt: null };
   if (!Number.isFinite(items.value[k].shift)) items.value[k].shift = 0;
   return items.value[k];
 }
-function getShift(dayKey, stopId) {
-  return Math.max(0, Math.floor(ensureItem(dayKey, stopId).shift || 0));
+function getShift(dayKey, kind, stopId) {
+  return Math.max(0, Math.floor(ensureItem(dayKey, kind, stopId).shift || 0));
 }
-function setShift(dayKey, stopId, v) {
-  ensureItem(dayKey, stopId).shift = Math.max(0, Math.floor(v || 0));
+function isDone(dayKey, kind, stopId) {
+  return !!ensureItem(dayKey, kind, stopId).doneAt;
 }
-function isDone(dayKey, stopId) {
-  return !!ensureItem(dayKey, stopId).doneAt;
-}
-function doneAt(dayKey, stopId) {
-  return ensureItem(dayKey, stopId).doneAt || null;
+function doneAt(dayKey, kind, stopId) {
+  return ensureItem(dayKey, kind, stopId).doneAt || null;
 }
 
 /** 카드 shift에 맞춰 표시 */
 function visibleStopsForCard(dayKey, cardShift) {
-  return allStopsFor(dayKey).filter((s) => getShift(dayKey, s.id) === cardShift);
+  return allStopsFor(dayKey).filter((s) => getShift(dayKey, s.kind, s.id) === cardShift);
 }
 function pendingStopsFor(dayKey, cardShift) {
-  return visibleStopsForCard(dayKey, cardShift).filter((s) => !isDone(dayKey, s.id));
+  return visibleStopsForCard(dayKey, cardShift).filter((s) => !isDone(dayKey, s.kind, s.id));
 }
 function completedStopsFor(dayKey, cardShift) {
-  return visibleStopsForCard(dayKey, cardShift).filter((s) => isDone(dayKey, s.id));
+  return visibleStopsForCard(dayKey, cardShift).filter((s) => isDone(dayKey, s.kind, s.id));
 }
 
 /** KST 기준 스케줄 순간(ms) */
-function scheduleMsKst(dayKey, stopId) {
-  const st = allStopsFor(dayKey).find((s) => s.id === stopId);
+function scheduleMsKst(dayKey, kind, stopId) {
+  const st = allStopsFor(dayKey).find((s) => s.kind === kind && s.id === stopId);
   if (!st?.time) return 0;
 
-  const sh = getShift(dayKey, stopId);
+  const sh = getShift(dayKey, kind, stopId);
   const dateUtc = plannedDateUtc(dayKey, sh);
   const y = dateUtc.getUTCFullYear();
   const m = dateUtc.getUTCMonth() + 1;
@@ -436,8 +449,8 @@ function canCompleteToday(cardIsoYmd) {
 
 /** 10분 카운터 */
 const AUTO_MS = 10 * 60 * 1000;
-function remainMs(dayKey, stopId) {
-  const t = doneAt(dayKey, stopId);
+function remainMs(dayKey, kind, stopId) {
+  const t = doneAt(dayKey, kind, stopId);
   if (!t) return null;
   const left = AUTO_MS - (nowMs.value - t);
   return Math.max(0, left);
@@ -448,19 +461,19 @@ function mmss(ms) {
   const ss = String(total % 60).padStart(2, "0");
   return `${mm}:${ss}`;
 }
-function countdownText(dayKey, stopId) {
-  const ms = remainMs(dayKey, stopId);
+function countdownText(dayKey, kind, stopId) {
+  const ms = remainMs(dayKey, kind, stopId);
   if (ms === null) return "—";
   return mmss(ms);
 }
 
-/** 완료/취소 (이제 절대 안꼬임) */
-function markDone(dayKey, stopId) {
-  ensureItem(dayKey, stopId).doneAt = nowMs.value;
+/** 완료/취소 */
+function markDone(dayKey, kind, stopId) {
+  ensureItem(dayKey, kind, stopId).doneAt = nowMs.value;
   scheduleSaveState(true);
 }
-function undoDone(dayKey, stopId) {
-  ensureItem(dayKey, stopId).doneAt = null;
+function undoDone(dayKey, kind, stopId) {
+  ensureItem(dayKey, kind, stopId).doneAt = null;
   scheduleSaveState(true);
 }
 
@@ -474,14 +487,14 @@ function runAutoMove() {
     const stops = allStopsFor(dayKey);
 
     for (const st of stops) {
-      const it = ensureItem(dayKey, st.id);
-      const sched = scheduleMsKst(dayKey, st.id);
+      const it = ensureItem(dayKey, st.kind, st.id);
+      const sched = scheduleMsKst(dayKey, st.kind, st.id);
 
       // (A) 미완료 + 지난 시간 -> 다음주로 밀기
       if (!it.doneAt && sched && sched < now) {
         let guard = 0;
-        while (guard < 12 && scheduleMsKst(dayKey, st.id) < now) {
-          it.shift = getShift(dayKey, st.id) + 1;
+        while (guard < 12 && scheduleMsKst(dayKey, st.kind, st.id) < now) {
+          it.shift = getShift(dayKey, st.kind, st.id) + 1;
           guard += 1;
         }
       }
@@ -489,7 +502,7 @@ function runAutoMove() {
       // (B) 완료 후 10분 -> 다음주로 이동 + 완료 제거
       if (it.doneAt && now - it.doneAt >= AUTO_MS) {
         it.doneAt = null;
-        it.shift = getShift(dayKey, st.id) + 1;
+        it.shift = getShift(dayKey, st.kind, st.id) + 1;
       }
     }
   }
@@ -512,15 +525,15 @@ watch(
 );
 
 /** names */
-function namesAt(dayKey, cardShift, stopId) {
+function namesAt(dayKey, cardShift, kind, stopId) {
   const keyword = q.value.trim().toLowerCase();
-  const stop = visibleStopsForCard(dayKey, cardShift).find((s) => s.id === stopId);
+  const stop = visibleStopsForCard(dayKey, cardShift).find((s) => s.kind === kind && s.id === stopId);
   const stopPlace = String(stop?.place || "").toLowerCase();
 
   const names = (Array.isArray(roster.value) ? roster.value : [])
     .map((p) => {
       const a = p.assign?.[dayKey] || { pickupPlace: "", dropoffPlace: "" };
-      const chosenPlace = mode.value === "pickup" ? a.pickupPlace : a.dropoffPlace;
+      const chosenPlace = kind === "pickup" ? a.pickupPlace : a.dropoffPlace;
       if (!chosenPlace) return null;
       if (String(chosenPlace) !== String(stop?.place || "")) return null;
       return p.name;
@@ -545,8 +558,11 @@ const filteredDays = computed(() => {
 
     const nameHit = (Array.isArray(roster.value) ? roster.value : []).some((p) => {
       const a = p.assign?.[d.dayKey] || {};
-      const chosen = mode.value === "pickup" ? a.pickupPlace : a.dropoffPlace;
-      return !!chosen && String(p.name || "").toLowerCase().includes(keyword);
+      const nmHit = String(p.name || "").toLowerCase().includes(keyword);
+      const pu = String(a.pickupPlace || "").toLowerCase();
+      const dof = String(a.dropoffPlace || "").toLowerCase();
+      const placeByAssignHit = pu.includes(keyword) || dof.includes(keyword);
+      return nmHit || placeByAssignHit;
     });
 
     return placeHit || nameHit;
@@ -768,6 +784,8 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
 }
+
+/* (기존 mode 스타일은 남겨도 무방: 템플릿에서만 제거됨) */
 .mode {
   display: flex;
   gap: 6px;
@@ -785,6 +803,7 @@ onBeforeUnmount(() => {
   background: rgba(79, 107, 255, 0.18);
   border-color: rgba(79, 107, 255, 0.55);
 }
+
 .dayseg {
   display: flex;
   gap: 6px;
@@ -898,7 +917,7 @@ onBeforeUnmount(() => {
 .stop-left {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .time {
   font-size: 18px;
@@ -906,10 +925,41 @@ onBeforeUnmount(() => {
   letter-spacing: 0.2px;
 }
 .place {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.place-text {
   font-size: 13px;
   opacity: 0.9;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+/* ✅ 승차/하차 태그 */
+.tag {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: 900;
+  white-space: nowrap;
+}
+.tag-pickup {
+  border-color: rgba(0, 200, 120, 0.35);
+  background: rgba(0, 200, 120, 0.12);
+  color: #6cffc0;
+}
+.tag-dropoff {
+  border-color: rgba(79, 107, 255, 0.45);
+  background: rgba(79, 107, 255, 0.14);
+  color: #b7c4ff;
+}
+
 .stop-right {
   min-width: 0;
   display: flex;
@@ -1036,6 +1086,9 @@ onBeforeUnmount(() => {
   }
   .done-btn {
     width: 100%;
+  }
+  .place-text {
+    white-space: normal;
   }
 }
 </style>
