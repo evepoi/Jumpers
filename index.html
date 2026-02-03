@@ -5,26 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Jumpers</title>
 
-    <!-- ✅ favicon (public/vite.svg 사용) -->
-    <link rel="icon" type="image/svg+xml" href="/Jumpers/vite.svg" />
+    <!-- public/vite.svg -->
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
 
-    <!-- ✅ GitHub Pages SPA 새로고침 복원 스크립트 -->
+    <!-- GitHub Pages SPA 새로고침 복원 스크립트 -->
     <script>
       (function () {
         var params = new URLSearchParams(window.location.search);
         var p = params.get("p");
         if (!p) return;
 
-        // p에 저장된 원래 경로로 주소만 복구 (리로드 없이)
         window.history.replaceState(null, "", decodeURIComponent(p));
 
-        // URL에서 p 파라미터 제거
         params.delete("p");
         var rest = params.toString();
         var clean =
-          window.location.pathname +
-          (rest ? "?" + rest : "") +
-          window.location.hash;
+          window.location.pathname + (rest ? "?" + rest : "") + window.location.hash;
 
         window.history.replaceState(null, "", clean);
       })();
@@ -33,8 +29,6 @@
 
   <body>
     <div id="app"></div>
-
-    <!-- ✅ Vite 엔트리 (이게 없으면 흰 화면) -->
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

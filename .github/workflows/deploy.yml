@@ -24,6 +24,8 @@ jobs:
           echo "repo: $GITHUB_REPOSITORY"
 
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -33,31 +35,50 @@ jobs:
       - name: Install
         run: npm ci
 
+      # ✅ dist 찌꺼기 제거 (예전 산출물/잘못된 파일 배포 방지)
+      - name: Clean dist
+        run: rm -rf dist
+
       - name: Build
         run: npm run build
 
-      - name: Verify dist output
+      # ✅ "Vite 빌드 산출물"인지 강제 검증
+      - name: Verify dist output (must be bundled)
         run: |
           set -e
+
           echo "=== dist list ==="
           ls -la dist || (echo "dist not found" && exit 1)
+
+          echo "=== dist/index.html (first 200 lines) ==="
+          if [ -f "dist/index.html" ]; then
+            sed -n '1,200p' dist/index.html
+          else
+            echo "dist/index.html not found" && exit 1
+          fi
+
+          echo "=== Validate index.html is a Vite bundle output ==="
+          # 1) 배포용 index.html에는 /src/main.js 가 절대 남아있으면 안 됨
+          if grep -q 'src="/src/main\.js"' dist/index.html; then
+            echo "ERROR: dist/index.html still references /src/main.js (not a production bundle)."
+            exit 1
+          fi
+
+          # 2) Vite 번들이면 보통 /assets/ 경로가 들어감(또는 import된 자산 파일)
+          if ! grep -q '/assets/' dist/index.html; then
+            echo "ERROR: dist/index.html does not contain /assets/ references. Build output looks wrong."
+            exit 1
+          fi
 
           echo "=== dist/assets list (optional) ==="
           if [ -d "dist/assets" ]; then
             ls -la dist/assets
           else
-            echo "dist/assets not found (ok)"
+            echo "dist/assets not found (ok) — but index.html must reference /assets/"
           fi
 
-          echo "=== dist/index.html (first 120 lines) ==="
-          if [ -f "dist/index.html" ]; then
-            sed -n '1,120p' dist/index.html
-          else
-            echo "dist/index.html not found" && exit 1
-          fi
-
-          echo "=== dist tree (maxdepth 2) ==="
-          find dist -maxdepth 2 -type f -print
+          echo "=== dist tree (maxdepth 3) ==="
+          find dist -maxdepth 3 -type f -print
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
