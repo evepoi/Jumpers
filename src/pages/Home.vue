@@ -161,13 +161,17 @@
                       </span>
                     </div>
 
+                    <!-- ✅ 모바일 겹침 방지: 카운터를 버튼 안으로 결합 -->
                     <div class="done-actions">
-                      <span class="countdown" :title="'10분 카운터'">
-                        {{ countdownText(d.dayKey, st.kind, st.id) }}
-                      </span>
-
-                      <button class="done-btn cancel" type="button" @click="undoDone(d.dayKey, st.kind, st.id)">
-                        완료취소
+                      <button
+                        class="done-btn cancel combo"
+                        type="button"
+                        @click="undoDone(d.dayKey, st.kind, st.id)"
+                        :title="'10분 카운터'"
+                      >
+                        <span class="combo-time">{{ countdownText(d.dayKey, st.kind, st.id) }}</span>
+                        <span class="combo-sep">·</span>
+                        <span class="combo-text">완료취소</span>
                       </button>
                     </div>
                   </div>
@@ -1320,6 +1324,25 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
+/* ✅ 카운터 + 완료취소 결합 버튼 */
+.done-btn.combo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+.done-btn.combo .combo-time {
+  font-weight: 900;
+  font-size: 12px;
+}
+.done-btn.combo .combo-sep {
+  opacity: 0.6;
+}
+.done-btn.combo .combo-text {
+  font-weight: 700;
+}
+
 /* 완료 섹션 */
 .done-section {
   margin-top: 14px;
@@ -1351,16 +1374,6 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
 }
-.countdown {
-  font-size: 12px;
-  font-weight: 900;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  opacity: 0.95;
-  white-space: nowrap;
-}
 .done-empty {
   margin-top: 8px;
   font-size: 12px;
@@ -1382,44 +1395,65 @@ onBeforeUnmount(() => {
   padding: 24px 0 32px;
 }
 
-/* ✅ 모바일: 2줄 */
+/* ✅ 모바일: 완료목록(done) 전용 정렬 + 진행카드는 기존 유지 */
 @media (max-width: 720px) {
+  /* ===== 공통: 모바일 기본 ===== */
   .stop {
     grid-template-columns: 1fr;
     gap: 8px;
   }
+
   .stop-left {
-    flex-direction: row;
-    align-items: center;
+    display: grid;
+    grid-template-columns: 64px 1fr;
     gap: 10px;
+    align-items: center;
   }
+
   .time {
     font-size: 18px;
-    min-width: 54px;
+    min-width: 64px;
+    font-weight: 900;
   }
+
   .place {
-    flex: 1;
-    min-width: 0;
-  }
-  .place-text {
-    white-space: normal;
-  }
-  .stop-right {
-    flex-direction: row;
+    display: flex;
+    gap: 8px;
     align-items: center;
-    justify-content: space-between;
-  }
-  .names {
-    flex: 1;
     min-width: 0;
   }
-  .done-btn {
-    width: auto;
-    min-width: 72px;
+
+  .place-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+
+  /* ===== 오른쪽 영역: 세로 스택 ===== */
+  .stop-right {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  /* 2줄: 명단 */
+  .names {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* 3줄: 완료취소(카운터 포함) */
   .done-actions {
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .done-btn {
     width: 100%;
+    min-width: 0;
   }
 }
 </style>
