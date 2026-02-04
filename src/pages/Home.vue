@@ -1,4 +1,3 @@
-<!-- FILE: src/pages/Home.vue -->
 <template>
   <main class="page">
     <!-- TOP -->
@@ -311,7 +310,6 @@ const dayCards = computed(() => {
     const dayKey = weekdayKeyOfIso(iso);
     if (!["mon", "tue", "wed", "thu", "fri"].includes(dayKey)) continue;
 
-    // shift는 "오늘 기준 +0~+1 주차 카드"가 나오도록 기존 로직 유지
     const curWs = getCurrentWeekStartUtc();
     const occWs = getWeekStartUtcForIso(iso);
     const shift = Math.round((occWs.getTime() - curWs.getTime()) / (7 * 86400000));
@@ -424,7 +422,7 @@ function completedStopsFor(dayKey, cardShift) {
   return visibleStopsForCard(dayKey, cardShift).filter((s) => isDone(dayKey, s.kind, s.id));
 }
 
-/** KST 기준 스케줄 순간(ms) */
+/** KST 기준 스케줄 순간(ms) (현재는 자동완료/자동넘김에 사용하지 않음) */
 function scheduleMsKst(dayKey, kind, stopId) {
   const st = allStopsFor(dayKey).find((s) => s.kind === kind && s.id === stopId);
   if (!st?.time) return 0;
@@ -477,7 +475,11 @@ function undoDone(dayKey, kind, stopId) {
   scheduleSaveState(true);
 }
 
-/** 자동 처리 */
+/** 자동 처리
+ * ✅ 변경: "시간이 지나면 자동 완료/자동 넘김" 제거
+ * - 이제는 '완료'를 눌러야 doneAt이 생김
+ * - doneAt이 생긴 것만 10분 후 shift++ + doneAt 초기화
+ */
 let autoTimer = null;
 function runAutoMove() {
   const now = nowMs.value;
@@ -488,18 +490,8 @@ function runAutoMove() {
 
     for (const st of stops) {
       const it = ensureItem(dayKey, st.kind, st.id);
-      const sched = scheduleMsKst(dayKey, st.kind, st.id);
 
-      // (A) 미완료 + 지난 시간 -> 다음주로 밀기
-      if (!it.doneAt && sched && sched < now) {
-        let guard = 0;
-        while (guard < 12 && scheduleMsKst(dayKey, st.kind, st.id) < now) {
-          it.shift = getShift(dayKey, st.kind, st.id) + 1;
-          guard += 1;
-        }
-      }
-
-      // (B) 완료 후 10분 -> 다음주로 이동 + 완료 제거
+      // (B) 완료 후 10분 -> 다음주로 이동 + 완료 제거 (유지)
       if (it.doneAt && now - it.doneAt >= AUTO_MS) {
         it.doneAt = null;
         it.shift = getShift(dayKey, st.kind, st.id) + 1;
@@ -1092,3 +1084,5 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+
+
