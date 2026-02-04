@@ -1,3 +1,4 @@
+<!-- FILE: src/pages/Home.vue -->
 <template>
   <main class="page">
     <!-- TOP -->
@@ -32,7 +33,6 @@
           </div>
 
           <div class="controls">
-            <!-- ✅ 승차/하차 토글 제거: 카드 안에서 승차/하차 뱃지로 구분 -->
             <div class="dayseg">
               <button
                 v-for="d in dayTabs"
@@ -72,7 +72,11 @@
           <div class="day-body">
             <!-- 진행 -->
             <ul class="timeline">
-              <li v-for="st in pendingStopsFor(d.dayKey, d.shift)" :key="st.kind + ':' + st.id" class="stop">
+              <li
+                v-for="st in pendingStopsFor(d.dayKey, d.shift, d.isoYmd)"
+                :key="st.kind + ':' + st.id"
+                class="stop"
+              >
                 <div class="stop-left">
                   <div class="time">{{ st.time }}</div>
                   <div class="place">
@@ -85,10 +89,19 @@
 
                 <div class="stop-right">
                   <div class="names">
-                    <span v-for="(nm, i) in namesAt(d.dayKey, d.shift, st.kind, st.id)" :key="nm + i" class="name">
+                    <span
+                      v-for="(nm, i) in namesAt(d.dayKey, d.shift, d.isoYmd, st.kind, st.id)"
+                      :key="nm + i"
+                      class="name"
+                    >
                       {{ nm }}
                     </span>
-                    <span v-if="namesAt(d.dayKey, d.shift, st.kind, st.id).length === 0" class="empty2">—</span>
+                    <span
+                      v-if="namesAt(d.dayKey, d.shift, d.isoYmd, st.kind, st.id).length === 0"
+                      class="empty2"
+                    >
+                      —
+                    </span>
                   </div>
 
                   <button
@@ -104,7 +117,7 @@
               </li>
             </ul>
 
-            <div v-if="pendingStopsFor(d.dayKey, d.shift).length === 0" class="day-empty">
+            <div v-if="pendingStopsFor(d.dayKey, d.shift, d.isoYmd).length === 0" class="day-empty">
               진행중 카드가 없습니다.
             </div>
 
@@ -117,7 +130,7 @@
 
               <ul class="timeline done">
                 <li
-                  v-for="st in completedStopsFor(d.dayKey, d.shift)"
+                  v-for="st in completedStopsFor(d.dayKey, d.shift, d.isoYmd)"
                   :key="'done:' + st.kind + ':' + st.id"
                   class="stop done-card"
                 >
@@ -134,13 +147,18 @@
                   <div class="stop-right">
                     <div class="names">
                       <span
-                        v-for="(nm, i) in namesAt(d.dayKey, d.shift, st.kind, st.id)"
+                        v-for="(nm, i) in namesAt(d.dayKey, d.shift, d.isoYmd, st.kind, st.id)"
                         :key="'d' + nm + i"
                         class="name"
                       >
                         {{ nm }}
                       </span>
-                      <span v-if="namesAt(d.dayKey, d.shift, st.kind, st.id).length === 0" class="empty2">—</span>
+                      <span
+                        v-if="namesAt(d.dayKey, d.shift, d.isoYmd, st.kind, st.id).length === 0"
+                        class="empty2"
+                      >
+                        —
+                      </span>
                     </div>
 
                     <div class="done-actions">
@@ -156,12 +174,12 @@
                 </li>
               </ul>
 
-              <div v-if="completedStopsFor(d.dayKey, d.shift).length === 0" class="done-empty">
+              <div v-if="completedStopsFor(d.dayKey, d.shift, d.isoYmd).length === 0" class="done-empty">
                 완료된 카드가 없습니다.
               </div>
             </section>
 
-            <div v-if="allStopsFor(d.dayKey).length === 0" class="day-empty">
+            <div v-if="allStopsForCard(d.dayKey, d.shift, d.isoYmd).length === 0" class="day-empty">
               이 요일은 노선이 없습니다. (설정에서 기본노선 등록)
             </div>
           </div>
@@ -195,6 +213,7 @@ const routes = ref({
   fri: { pickup: [], dropoff: [] },
 });
 const roster = ref([]);
+const reservations = ref([]);
 
 /** ===== KST clock ===== */
 const tick = ref(Date.now());
@@ -212,9 +231,7 @@ const nowKst = computed(() => {
 });
 
 const todayLabel = computed(() => {
-  const wd = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", weekday: "long" }).format(
-    new Date(tick.value)
-  );
+  const wd = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", weekday: "long" }).format(new Date(tick.value));
   const ymd = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
@@ -239,6 +256,31 @@ function kstIsoYmd() {
     day: "2-digit",
   }).format(new Date(tick.value));
 }
+
+function normalizeIsoDate(s) {
+  const raw = String(s || "").trim();
+  if (!raw) return "";
+
+  const dot = raw.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
+  if (dot) {
+    const y = dot[1];
+    const m = String(parseInt(dot[2], 10)).padStart(2, "0");
+    const d = String(parseInt(dot[3], 10)).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  const dash = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (dash) {
+    const y = dash[1];
+    const m = String(parseInt(dash[2], 10)).padStart(2, "0");
+    const d = String(parseInt(dash[3], 10)).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return raw;
+}
+
 function parseIsoToUtcMidnight(yyyyMmDd) {
   const [y, m, d] = (yyyyMmDd || "1970-01-01").split("-").map((v) => parseInt(v, 10));
   return new Date(Date.UTC(y || 1970, (m || 1) - 1, d || 1, 0, 0, 0));
@@ -339,47 +381,215 @@ function sortByTimeAsc(a, b) {
   return ah * 60 + am - (bh * 60 + bm);
 }
 
-/** ✅ "명단 배정된 stop만 노출" 유지 (승차/하차 각각 카운트) */
-const assignedCountByDayKindPlace = computed(() => {
-  const out = {
-    pickup: { mon: {}, tue: {}, wed: {}, thu: {}, fri: {} },
-    dropoff: { mon: {}, tue: {}, wed: {}, thu: {}, fri: {} },
-  };
+/** ✅ kind/memoType 정규화 (레거시 + 새 구조) */
+function normalizeReserveKindKey(rawKind, rawMemoType) {
+  const k = String(rawKind || "").trim();
+  const mt = String(rawMemoType || "").trim();
 
+  // 새 구조(kind)
+  if (k === "체험") return "trial";
+  if (k === "보강") return "reinforce";
+  if (k === "사용자 지정") return "custom";
+
+  // 레거시(memoType)
+  if (mt === "trial") return "trial";
+  if (mt === "reinforce") return "reinforce";
+  if (mt === "custom") return "custom";
+
+  // 아주 옛날에 kind가 trial/reinforce/custom로 들어올 수도
+  if (k === "trial" || k === "reinforce" || k === "custom") return k;
+
+  return ""; // unknown
+}
+
+function reserveLabelForDisplay(kindKey, customText) {
+  if (kindKey === "trial") return "체험";
+  if (kindKey === "reinforce") return "보강";
+  if (kindKey === "custom") return String(customText || "").trim() || "사용자지정";
+  return "예약";
+}
+
+function reservationNamesArrayLegacy(r) {
+  if (Array.isArray(r?.names)) return r.names.map((x) => String(x || "").trim()).filter(Boolean);
+  const one = String(r?.tempName || "").trim();
+  return one ? [one] : [];
+}
+
+/** ✅ Firestore 예약 데이터 정규화(레거시/키/형태 모두 흡수) */
+function normalizeReservationsInput(data) {
+  const cand =
+    data?.reservations ??
+    data?.reservationList ??
+    data?.reservation ??
+    data?.reserve ??
+    data?.reserves ??
+    [];
+
+  const arr = Array.isArray(cand) ? cand : cand && typeof cand === "object" ? Object.values(cand) : [];
+
+  return arr
+    .map((r) => {
+      const id = String(r?.id || "") || `res-${Math.random().toString(16).slice(2)}-${Date.now().toString(16)}`;
+      const date = normalizeIsoDate(r?.date);
+
+      // 새 구조 필드도 보존
+      const kind = typeof r?.kind === "string" ? r.kind : "";
+      const personId = typeof r?.personId === "string" ? r.personId : "";
+      const tempName = typeof r?.tempName === "string" ? r.tempName : "";
+      const customText = typeof r?.customText === "string" ? r.customText : "";
+
+      // 레거시
+      const memoType = typeof r?.memoType === "string" ? r.memoType : "";
+      const memoText = typeof r?.memoText === "string" ? r.memoText : "";
+
+      let pickupPlace = String(r?.pickupPlace || "").trim();
+      let dropoffPlace = String(r?.dropoffPlace || "").trim();
+
+      // legacy: kind/place
+      if (!pickupPlace && !dropoffPlace && typeof r?.place === "string") {
+        const k = String(r?.kind || "pickup");
+        if (k === "dropoff") dropoffPlace = String(r.place || "").trim();
+        else pickupPlace = String(r.place || "").trim();
+      }
+
+      // 레거시 names/tempName
+      const legacyNames = reservationNamesArrayLegacy(r);
+
+      return {
+        id,
+        date,
+
+        // keep both
+        kind,
+        personId,
+        tempName,
+        customText,
+
+        memoType,
+        memoText,
+        legacyNames,
+
+        pickupPlace,
+        dropoffPlace,
+
+        createdAtMs: typeof r?.createdAtMs === "number" ? r.createdAtMs : 0,
+        completedAtMs: typeof r?.completedAtMs === "number" ? r.completedAtMs : 0,
+      };
+    })
+    .filter((r) => !!r.date);
+}
+
+/** ✅ roster에서 id로 이름 찾기 */
+function personNameById(pid) {
+  const id = String(pid || "");
+  if (!id) return "";
+  const list = Array.isArray(roster.value) ? roster.value : [];
+  const p = list.find((x) => String(x?.id || "") === id);
+  return String(p?.name || "").trim();
+}
+
+function buildDayModelForIso(dayKey, isoYmdRaw) {
+  const isoYmd = normalizeIsoDate(isoYmdRaw);
+
+  const outCounts = { pickup: {}, dropoff: {} };
+  const overrides = {};
+  const trialExtras = { pickup: {}, dropoff: {} };
+
+  const rsv = Array.isArray(reservations.value) ? reservations.value : [];
+  for (const r of rsv) {
+    if (normalizeIsoDate(r?.date) !== isoYmd) continue;
+
+    const kindKey = normalizeReserveKindKey(r?.kind, r?.memoType);
+    const label = reserveLabelForDisplay(kindKey, r?.customText || r?.memoText);
+
+    const pu = String(r?.pickupPlace || "").trim();
+    const dof = String(r?.dropoffPlace || "").trim();
+
+    // ✅ 대상 이름 결정
+    let targetName = "";
+
+    // 새 구조 우선
+    if (kindKey === "trial") {
+      targetName = String(r?.tempName || "").trim();
+    } else {
+      targetName = personNameById(r?.personId);
+      if (!targetName) {
+        // 레거시 fallback: names[0]
+        const legacyNames = Array.isArray(r?.legacyNames) ? r.legacyNames : [];
+        targetName = String(legacyNames[0] || "").trim();
+      }
+    }
+
+    if (!targetName) continue;
+
+    // ✅ 체험: 기존명단과 무관하게 추가
+    if (kindKey === "trial") {
+      const disp = `${targetName}(${label || "체험"})`;
+
+      if (pu) {
+        if (!trialExtras.pickup[pu]) trialExtras.pickup[pu] = [];
+        trialExtras.pickup[pu].push(disp);
+        outCounts.pickup[pu] = (outCounts.pickup[pu] || 0) + 1;
+      }
+      if (dof) {
+        if (!trialExtras.dropoff[dof]) trialExtras.dropoff[dof] = [];
+        trialExtras.dropoff[dof].push(disp);
+        outCounts.dropoff[dof] = (outCounts.dropoff[dof] || 0) + 1;
+      }
+      continue;
+    }
+
+    // ✅ 보강/사용자 지정: 기존명단의 "시간/장소"를 override
+    if (!overrides[targetName]) overrides[targetName] = {};
+
+    // “미배정(완전 제외)” 데이터가 혹시 들어올 수 있으니: 둘다 비면 해당일 완전 제외 플래그
+    if (!pu && !dof) {
+      overrides[targetName].__none__ = true;
+      continue;
+    }
+
+    if (pu) overrides[targetName].pickup = { place: pu, label };
+    if (dof) overrides[targetName].dropoff = { place: dof, label };
+  }
+
+  // ✅ roster 기반 count 합산 (override 반영)
   const list = Array.isArray(roster.value) ? roster.value : [];
   for (const p of list) {
-    const assign = p?.assign || {};
-    for (const d of baseDays) {
-      const dk = d.key;
-      const a = assign?.[dk] || {};
-      const pu = typeof a.pickupPlace === "string" ? a.pickupPlace : "";
-      const dof = typeof a.dropoffPlace === "string" ? a.dropoffPlace : "";
+    const nm = String(p?.name || "").trim();
+    if (!nm) continue;
 
-      if (pu) out.pickup[dk][pu] = (out.pickup[dk][pu] || 0) + 1;
-      if (dof) out.dropoff[dk][dof] = (out.dropoff[dk][dof] || 0) + 1;
-    }
+    const ov = overrides[nm] || {};
+    if (ov.__none__) continue; // 완전 제외
+
+    const a = p?.assign?.[dayKey] || {};
+
+    const pickupPlace = ov.pickup?.place ? String(ov.pickup.place) : String(a.pickupPlace || "").trim();
+    if (pickupPlace) outCounts.pickup[pickupPlace] = (outCounts.pickup[pickupPlace] || 0) + 1;
+
+    const dropoffPlace = ov.dropoff?.place ? String(ov.dropoff.place) : String(a.dropoffPlace || "").trim();
+    if (dropoffPlace) outCounts.dropoff[dropoffPlace] = (outCounts.dropoff[dropoffPlace] || 0) + 1;
   }
-  return out;
-});
 
-/** ✅ 한 요일 카드에서 승차/하차를 "하나의 타임라인"으로 합치고 시간순 정렬 */
-function allStopsFor(dayKey) {
-  if (!Array.isArray(roster.value) || roster.value.length === 0) return [];
+  return { counts: outCounts, overrides, trialExtras };
+}
+
+function allStopsForCard(dayKey, cardShift, isoYmdRaw) {
+  const isoYmd = normalizeIsoDate(isoYmdRaw);
+  if (!isoYmd) return [];
+
+  const model = buildDayModelForIso(dayKey, isoYmd);
 
   const puArr = Array.isArray(routes.value?.[dayKey]?.pickup) ? routes.value[dayKey].pickup : [];
   const doArr = Array.isArray(routes.value?.[dayKey]?.dropoff) ? routes.value[dayKey].dropoff : [];
 
-  const puCounts = assignedCountByDayKindPlace.value?.pickup?.[dayKey] || {};
-  const doCounts = assignedCountByDayKindPlace.value?.dropoff?.[dayKey] || {};
-
   const pu = [...puArr]
     .sort(sortByTimeAsc)
-    .filter((s) => (puCounts[String(s.place || "")] || 0) > 0)
+    .filter((s) => (model.counts.pickup[String(s.place || "")] || 0) > 0)
     .map((s) => ({ ...s, kind: "pickup" }));
 
   const dof = [...doArr]
     .sort(sortByTimeAsc)
-    .filter((s) => (doCounts[String(s.place || "")] || 0) > 0)
+    .filter((s) => (model.counts.dropoff[String(s.place || "")] || 0) > 0)
     .map((s) => ({ ...s, kind: "dropoff" }));
 
   return [...pu, ...dof].sort(sortByTimeAsc);
@@ -387,11 +597,9 @@ function allStopsFor(dayKey) {
 
 /** =========================
  * ✅ NEW STATE MODEL (kind 포함)
- * items["pickup:tue:stopId"] = { shift: 0, doneAt: number|null }
  * ========================= */
 const items = ref({}); // key -> {shift, doneAt}
 
-/** key helpers */
 function itemKey(dayKey, kind, stopId) {
   return `${kind}:${dayKey}:${stopId}`;
 }
@@ -411,35 +619,19 @@ function doneAt(dayKey, kind, stopId) {
   return ensureItem(dayKey, kind, stopId).doneAt || null;
 }
 
-/** 카드 shift에 맞춰 표시 */
-function visibleStopsForCard(dayKey, cardShift) {
-  return allStopsFor(dayKey).filter((s) => getShift(dayKey, s.kind, s.id) === cardShift);
+function visibleStopsForCard(dayKey, cardShift, isoYmd) {
+  return allStopsForCard(dayKey, cardShift, isoYmd).filter((s) => getShift(dayKey, s.kind, s.id) === cardShift);
 }
-function pendingStopsFor(dayKey, cardShift) {
-  return visibleStopsForCard(dayKey, cardShift).filter((s) => !isDone(dayKey, s.kind, s.id));
+function pendingStopsFor(dayKey, cardShift, isoYmd) {
+  return visibleStopsForCard(dayKey, cardShift, isoYmd).filter((s) => !isDone(dayKey, s.kind, s.id));
 }
-function completedStopsFor(dayKey, cardShift) {
-  return visibleStopsForCard(dayKey, cardShift).filter((s) => isDone(dayKey, s.kind, s.id));
-}
-
-/** KST 기준 스케줄 순간(ms) (현재는 자동완료/자동넘김에 사용하지 않음) */
-function scheduleMsKst(dayKey, kind, stopId) {
-  const st = allStopsFor(dayKey).find((s) => s.kind === kind && s.id === stopId);
-  if (!st?.time) return 0;
-
-  const sh = getShift(dayKey, kind, stopId);
-  const dateUtc = plannedDateUtc(dayKey, sh);
-  const y = dateUtc.getUTCFullYear();
-  const m = dateUtc.getUTCMonth() + 1;
-  const d = dateUtc.getUTCDate();
-
-  const [hh, mm] = String(st.time).split(":").map((x) => parseInt(x, 10));
-  return Date.UTC(y, m - 1, d, (hh || 0) - 9, mm || 0, 0, 0);
+function completedStopsFor(dayKey, cardShift, isoYmd) {
+  return visibleStopsForCard(dayKey, cardShift, isoYmd).filter((s) => isDone(dayKey, s.kind, s.id));
 }
 
 /** 당일만 활성 */
 function isTodayIso(isoYmd) {
-  return isoYmd === kstIsoYmd();
+  return normalizeIsoDate(isoYmd) === normalizeIsoDate(kstIsoYmd());
 }
 function canCompleteToday(cardIsoYmd) {
   return isTodayIso(cardIsoYmd);
@@ -475,32 +667,98 @@ function undoDone(dayKey, kind, stopId) {
   scheduleSaveState(true);
 }
 
-/** 자동 처리
- * ✅ 변경: "시간이 지나면 자동 완료/자동 넘김" 제거
- * - 이제는 '완료'를 눌러야 doneAt이 생김
- * - doneAt이 생긴 것만 10분 후 shift++ + doneAt 초기화
- */
+/** ✅ 예약 자동삭제 규칙(그대로 유지) */
+function shouldDeleteReserveOnMovedStop(r, movedIsoRaw, movedDayKey, movedKind, movedPlace) {
+  const movedIso = normalizeIsoDate(movedIsoRaw);
+  if (normalizeIsoDate(r?.date) !== movedIso) return false;
+
+  const dk = weekdayKeyOfIso(movedIso);
+  if (dk !== movedDayKey) return false;
+
+  const pu = String(r?.pickupPlace || "").trim();
+  const dof = String(r?.dropoffPlace || "").trim();
+
+  const placeMatch = String(movedPlace || "").trim();
+  const hasPu = !!pu;
+  const hasDo = !!dof;
+
+  if (hasPu && hasDo) {
+    if (movedKind !== "dropoff") return false;
+    if (String(dof) !== placeMatch) return false;
+    return true;
+  }
+
+  if (hasPu && !hasDo) {
+    if (movedKind !== "pickup") return false;
+    if (String(pu) !== placeMatch) return false;
+    return true;
+  }
+
+  if (!hasPu && hasDo) {
+    if (movedKind !== "dropoff") return false;
+    if (String(dof) !== placeMatch) return false;
+    return true;
+  }
+
+  return false;
+}
+
+async function deleteReservationsByIds(ids) {
+  const list = Array.isArray(ids) ? ids.map((x) => String(x || "")).filter(Boolean) : [];
+  if (list.length === 0) return;
+
+  const before = Array.isArray(reservations.value) ? reservations.value : [];
+  const next = before.filter((r) => !list.includes(String(r?.id || "")));
+  if (next.length === before.length) return;
+
+  reservations.value = next;
+
+  const payload = {
+    reservations: JSON.parse(JSON.stringify(next)),
+    updatedAt: serverTimestamp(),
+    savedAt: Date.now(),
+  };
+  await setDoc(doc(db, APP_COL, APP_DOC), payload, { merge: true });
+}
+
+/** 자동 이동 + 예약 삭제 */
 let autoTimer = null;
 function runAutoMove() {
   const now = nowMs.value;
 
   for (const d of baseDays) {
-    const dayKey = d.key;
-    const stops = allStopsFor(dayKey);
+    const dk = d.key;
 
-    for (const st of stops) {
-      const it = ensureItem(dayKey, st.kind, st.id);
+    const all = [];
+    const puArr = Array.isArray(routes.value?.[dk]?.pickup) ? routes.value[dk].pickup : [];
+    const doArr = Array.isArray(routes.value?.[dk]?.dropoff) ? routes.value[dk].dropoff : [];
+    for (const s of puArr) all.push({ ...s, kind: "pickup" });
+    for (const s of doArr) all.push({ ...s, kind: "dropoff" });
 
-      // (B) 완료 후 10분 -> 다음주로 이동 + 완료 제거 (유지)
+    for (const st of all) {
+      const it = ensureItem(dk, st.kind, st.id);
+
       if (it.doneAt && now - it.doneAt >= AUTO_MS) {
+        const curShift = getShift(dk, st.kind, st.id);
+        const movedIso = formatIsoYmd(plannedDateUtc(dk, curShift));
+
         it.doneAt = null;
-        it.shift = getShift(dayKey, st.kind, st.id) + 1;
+        it.shift = curShift + 1;
+
+        const movedPlace = String(st.place || "");
+        const toDelete = [];
+        for (const r of Array.isArray(reservations.value) ? reservations.value : []) {
+          if (shouldDeleteReserveOnMovedStop(r, movedIso, dk, st.kind, movedPlace)) {
+            toDelete.push(String(r?.id || ""));
+          }
+        }
+        if (toDelete.length > 0) deleteReservationsByIds(toDelete).catch(() => {});
       }
     }
   }
 }
 
-/** 주가 바뀌면 shift 당기기 + done 초기화(기존 유지) */
+/** 주가 바뀌면 shift 당기기 + done 초기화 */
 const weekStartYmd = computed(() => formatIsoYmd(getCurrentWeekStartUtc()));
 watch(
   () => weekStartYmd.value,
@@ -517,25 +775,72 @@ watch(
 );
 
 /** names */
-function namesAt(dayKey, cardShift, kind, stopId) {
+function namesAt(dayKey, cardShift, isoYmdRaw, kind, stopId) {
+  const isoYmd = normalizeIsoDate(isoYmdRaw);
   const keyword = q.value.trim().toLowerCase();
-  const stop = visibleStopsForCard(dayKey, cardShift).find((s) => s.kind === kind && s.id === stopId);
-  const stopPlace = String(stop?.place || "").toLowerCase();
 
-  const names = (Array.isArray(roster.value) ? roster.value : [])
-    .map((p) => {
-      const a = p.assign?.[dayKey] || { pickupPlace: "", dropoffPlace: "" };
-      const chosenPlace = kind === "pickup" ? a.pickupPlace : a.dropoffPlace;
-      if (!chosenPlace) return null;
-      if (String(chosenPlace) !== String(stop?.place || "")) return null;
-      return p.name;
-    })
-    .filter(Boolean);
+  const stop = visibleStopsForCard(dayKey, cardShift, isoYmd).find((s) => s.kind === kind && s.id === stopId);
+  const stopPlace = String(stop?.place || "").trim();
+  const stopPlaceLc = stopPlace.toLowerCase();
 
-  if (!keyword) return names;
+  const model = buildDayModelForIso(dayKey, isoYmd);
+  const overrides = model.overrides || {};
+  const extras = model.trialExtras || { pickup: {}, dropoff: {} };
 
-  const placeHit = stopPlace.includes(keyword);
-  return names.filter((nm) => placeHit || String(nm).toLowerCase().includes(keyword));
+  const out = [];
+  const seen = new Set();
+
+  const list = Array.isArray(roster.value) ? roster.value : [];
+  for (const p of list) {
+    const nm = String(p?.name || "").trim();
+    if (!nm) continue;
+
+    const ov = overrides[nm] || {};
+    if (ov.__none__) continue;
+
+    const a = p?.assign?.[dayKey] || {};
+
+    if (kind === "pickup") {
+      const place = ov.pickup?.place ? String(ov.pickup.place) : String(a.pickupPlace || "").trim();
+      if (!place) continue;
+      if (place !== stopPlace) continue;
+
+      const label = ov.pickup?.place ? String(ov.pickup.label || "").trim() : "";
+      const disp = label ? `${nm}(${label})` : nm;
+
+      if (!seen.has(disp)) {
+        seen.add(disp);
+        out.push(disp);
+      }
+      continue;
+    }
+
+    const place = ov.dropoff?.place ? String(ov.dropoff.place) : String(a.dropoffPlace || "").trim();
+    if (!place) continue;
+    if (place !== stopPlace) continue;
+
+    const label = ov.dropoff?.place ? String(ov.dropoff.label || "").trim() : "";
+    const disp = label ? `${nm}(${label})` : nm;
+
+    if (!seen.has(disp)) {
+      seen.add(disp);
+      out.push(disp);
+    }
+  }
+
+  const addList = kind === "pickup" ? extras.pickup[String(stopPlace)] || [] : extras.dropoff[String(stopPlace)] || [];
+  for (const disp of addList) {
+    if (!disp) continue;
+    if (!seen.has(disp)) {
+      seen.add(disp);
+      out.push(disp);
+    }
+  }
+
+  if (!keyword) return out;
+
+  const placeHit = stopPlaceLc.includes(keyword);
+  return out.filter((nm) => placeHit || String(nm).toLowerCase().includes(keyword));
 }
 
 /** filters */
@@ -545,10 +850,10 @@ const filteredDays = computed(() => {
   if (!keyword) return base;
 
   return base.filter((d) => {
-    const stops = visibleStopsForCard(d.dayKey, d.shift);
+    const stops = visibleStopsForCard(d.dayKey, d.shift, d.isoYmd);
     const placeHit = stops.some((s) => String(s.place || "").toLowerCase().includes(keyword));
 
-    const nameHit = (Array.isArray(roster.value) ? roster.value : []).some((p) => {
+    const rosterHit = (Array.isArray(roster.value) ? roster.value : []).some((p) => {
       const a = p.assign?.[d.dayKey] || {};
       const nmHit = String(p.name || "").toLowerCase().includes(keyword);
       const pu = String(a.pickupPlace || "").toLowerCase();
@@ -557,7 +862,34 @@ const filteredDays = computed(() => {
       return nmHit || placeByAssignHit;
     });
 
-    return placeHit || nameHit;
+    const reserveHit = (Array.isArray(reservations.value) ? reservations.value : []).some((r) => {
+      if (normalizeIsoDate(r?.date) !== normalizeIsoDate(d.isoYmd)) return false;
+
+      const kindKey = normalizeReserveKindKey(r?.kind, r?.memoType);
+      const label = reserveLabelForDisplay(kindKey, r?.customText || r?.memoText).toLowerCase();
+
+      const pu = String(r?.pickupPlace || "").toLowerCase();
+      const dof = String(r?.dropoffPlace || "").toLowerCase();
+      const placeHit2 = pu.includes(keyword) || dof.includes(keyword);
+
+      const nmCandidates = [];
+      const tn = String(r?.tempName || "").trim();
+      if (tn) nmCandidates.push(tn);
+      const pn = personNameById(r?.personId);
+      if (pn) nmCandidates.push(pn);
+      const legacy = Array.isArray(r?.legacyNames) ? r.legacyNames : [];
+      nmCandidates.push(...legacy);
+
+      const nmHit = nmCandidates.some((nm) => String(nm || "").toLowerCase().includes(keyword));
+      const typeHit = label.includes(keyword);
+
+      const custom = String(r?.customText || r?.memoText || "").toLowerCase();
+      const memoHit = custom.includes(keyword);
+
+      return nmHit || placeHit2 || typeHit || memoHit;
+    });
+
+    return placeHit || rosterHit || reserveHit;
   });
 });
 
@@ -612,9 +944,14 @@ onMounted(() => {
     (snap) => {
       if (!snap.exists()) return;
       const data = snap.data() || {};
+
       if (data.routes) routes.value = data.routes;
+
       if (Array.isArray(data.people)) roster.value = data.people;
       else roster.value = [];
+
+      // ✅ 여기: 새 구조(kind/personId/tempName/customText)까지 포함해서 정규화
+      reservations.value = normalizeReservationsInput(data);
     },
     () => {}
   );
@@ -626,7 +963,6 @@ onMounted(() => {
       const st = snap.data() || {};
       const remoteSavedAt = Number(st.savedAt || 0);
 
-      // 오래된 스냅샷이면 무시(되돌아옴 방지)
       if (remoteSavedAt && lastLocalWriteAt.value && remoteSavedAt < lastLocalWriteAt.value) return;
 
       applyingRemote.value = true;
@@ -775,25 +1111,6 @@ onBeforeUnmount(() => {
   gap: 10px;
   flex-wrap: wrap;
   align-items: center;
-}
-
-/* (기존 mode 스타일은 남겨도 무방: 템플릿에서만 제거됨) */
-.mode {
-  display: flex;
-  gap: 6px;
-}
-.mode-btn {
-  font-size: 12px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.18);
-  color: #eaf0ff;
-  cursor: pointer;
-}
-.mode-btn.active {
-  background: rgba(79, 107, 255, 0.18);
-  border-color: rgba(79, 107, 255, 0.55);
 }
 
 .dayseg {
@@ -1065,24 +1382,44 @@ onBeforeUnmount(() => {
   padding: 24px 0 32px;
 }
 
+/* ✅ 모바일: 2줄 */
 @media (max-width: 720px) {
   .stop {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
-  .stop-right {
-    flex-direction: column;
-    align-items: stretch;
+  .stop-left {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
   }
-  .done-actions {
-    justify-content: space-between;
+  .time {
+    font-size: 18px;
+    min-width: 54px;
   }
-  .done-btn {
-    width: 100%;
+  .place {
+    flex: 1;
+    min-width: 0;
   }
   .place-text {
     white-space: normal;
   }
+  .stop-right {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .names {
+    flex: 1;
+    min-width: 0;
+  }
+  .done-btn {
+    width: auto;
+    min-width: 72px;
+  }
+  .done-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
 }
 </style>
-
-
