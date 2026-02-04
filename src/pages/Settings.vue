@@ -52,7 +52,7 @@
 
           <div class="info">
             <span class="pill">{{ dayLabel(dayKey) }}</span>
-            <span class="pill soft">{{ combinedStopsSorted.length }}개</span>
+            <span class="pill soft">{{ combinedStopsView.length }}개</span>
           </div>
         </div>
 
@@ -88,7 +88,7 @@
           <p v-if="routeError" class="err">{{ routeError }}</p>
         </div>
 
-        <!-- ✅ 통합 리스트(시간순) : 한 줄로 -->
+        <!-- ✅ 통합 리스트 : 저장 전까지 정렬 금지(줄 위치 고정) -->
         <div class="table">
           <div class="thead thead-inline">
             <span>승/하차</span>
@@ -97,7 +97,7 @@
             <span class="ta">관리</span>
           </div>
 
-          <div v-for="row in combinedStopsSorted" :key="row.key" class="trow trow-inline">
+          <div v-for="row in combinedStopsView" :key="row.key" class="trow trow-inline">
             <select class="inp select kind" v-model="draft[row.key].kind">
               <option value="pickup">승차</option>
               <option value="dropoff">하차</option>
@@ -112,7 +112,7 @@
             </div>
           </div>
 
-          <div v-if="combinedStopsSorted.length === 0" class="empty">이 요일은 노선이 없습니다.</div>
+          <div v-if="combinedStopsView.length === 0" class="empty">이 요일은 노선이 없습니다.</div>
         </div>
       </section>
 
@@ -151,12 +151,7 @@
           <div class="editor-head">
             <div class="field grow">
               <span class="lab">이름</span>
-              <input
-                class="inp"
-                :ref="(el) => setNameRef(p.id, el)"
-                v-model="p.name"
-                placeholder="예) 김준영"
-              />
+              <input class="inp" :ref="(el) => setNameRef(p.id, el)" v-model="p.name" placeholder="예) 김준영" />
             </div>
 
             <button class="btn danger" type="button" @click="removePerson(p.id)">명단 삭제</button>
@@ -178,8 +173,17 @@
               </div>
 
               <div class="cpick">
-                <select class="inp select" v-model="p.assign[d.key].pickupPlace">
+                <select class="inp select" v-model="p.assign[d.key].pickupPlace" @change="onAssignPlaceChange(p, d.key)">
                   <option value="">(미배정)</option>
+
+                  <!-- ✅ 기본노선에 없는 값이면 '(기존)'으로 보여주되, 값은 유지 -->
+                  <option
+                    v-if="p.assign[d.key].pickupPlace && !optionExists(d.key, 'pickup', p.assign[d.key].pickupPlace)"
+                    :value="p.assign[d.key].pickupPlace"
+                  >
+                    (기존) {{ p.assign[d.key].pickupPlace }}
+                  </option>
+
                   <option v-for="opt in placeOptions(d.key, 'pickup')" :key="opt.place" :value="opt.place">
                     {{ opt.place }}
                   </option>
@@ -191,8 +195,16 @@
               </div>
 
               <div class="cdrop">
-                <select class="inp select" v-model="p.assign[d.key].dropoffPlace">
+                <select class="inp select" v-model="p.assign[d.key].dropoffPlace" @change="onAssignPlaceChange(p, d.key)">
                   <option value="">(미배정)</option>
+
+                  <option
+                    v-if="p.assign[d.key].dropoffPlace && !optionExists(d.key, 'dropoff', p.assign[d.key].dropoffPlace)"
+                    :value="p.assign[d.key].dropoffPlace"
+                  >
+                    (기존) {{ p.assign[d.key].dropoffPlace }}
+                  </option>
+
                   <option v-for="opt in placeOptions(d.key, 'dropoff')" :key="opt.place" :value="opt.place">
                     {{ opt.place }}
                   </option>
@@ -214,23 +226,41 @@
 
               <div class="mline">
                 <span class="tag pickup">승차</span>
-                <select class="inp select msel" v-model="p.assign[d.key].pickupPlace">
+                <select class="inp select msel" v-model="p.assign[d.key].pickupPlace" @change="onAssignPlaceChange(p, d.key)">
                   <option value="">(미배정)</option>
+
+                  <option
+                    v-if="p.assign[d.key].pickupPlace && !optionExists(d.key, 'pickup', p.assign[d.key].pickupPlace)"
+                    :value="p.assign[d.key].pickupPlace"
+                  >
+                    (기존) {{ p.assign[d.key].pickupPlace }}
+                  </option>
+
                   <option v-for="opt in placeOptions(d.key, 'pickup')" :key="opt.place" :value="opt.place">
                     {{ opt.place }}
                   </option>
                 </select>
+
                 <span class="tchip mt">{{ autoTimeValue(d.key, "pickup", p.assign[d.key]?.pickupPlace) }}</span>
               </div>
 
               <div class="mline">
                 <span class="tag dropoff">하차</span>
-                <select class="inp select msel" v-model="p.assign[d.key].dropoffPlace">
+                <select class="inp select msel" v-model="p.assign[d.key].dropoffPlace" @change="onAssignPlaceChange(p, d.key)">
                   <option value="">(미배정)</option>
+
+                  <option
+                    v-if="p.assign[d.key].dropoffPlace && !optionExists(d.key, 'dropoff', p.assign[d.key].dropoffPlace)"
+                    :value="p.assign[d.key].dropoffPlace"
+                  >
+                    (기존) {{ p.assign[d.key].dropoffPlace }}
+                  </option>
+
                   <option v-for="opt in placeOptions(d.key, 'dropoff')" :key="opt.place" :value="opt.place">
                     {{ opt.place }}
                   </option>
                 </select>
+
                 <span class="tchip mt">{{ autoTimeValue(d.key, "dropoff", p.assign[d.key]?.dropoffPlace) }}</span>
               </div>
             </div>
@@ -322,6 +352,7 @@ function makeRowKey(dk, kind, id) {
   return `${dk}:${kind}:${id}`;
 }
 
+/** routes 기준(저장된 순서)로 통합 */
 function combinedStops(dk) {
   const pu = (routes?.[dk]?.pickup || []).map((s) => ({
     dk,
@@ -355,19 +386,24 @@ function ensureDraftForDay(dk) {
   }
 }
 
-const combinedStopsSorted = computed(() => {
+/** ✅ 화면 출력: 저장 전에는 정렬하지 않음(줄 위치 고정) */
+const combinedStopsView = computed(() => {
   const arr = combinedStops(dayKey.value);
-  const mapped = arr.map((r) => {
+  return arr.map((r) => {
     const d = draft[r.key];
     return d ? { ...r, kind: d.kind, time: d.time, place: d.place } : r;
   });
-  return mapped.slice().sort(sortByTimeAsc);
 });
 
 /** ===== roster ===== */
 function makeEmptyAssign() {
   const out = {};
-  for (const d of days) out[d.key] = { pickupPlace: "", dropoffPlace: "" };
+  for (const d of days) {
+    out[d.key] = {
+      pickupPlace: "",
+      dropoffPlace: "",
+    };
+  }
   return out;
 }
 
@@ -384,7 +420,7 @@ people.value[1].assign.tue.dropoffPlace = "더샵";
 people.value[2].assign.wed.pickupPlace = "레이크시티";
 people.value[2].assign.wed.dropoffPlace = "레이크시티";
 
-/** ✅ 신규 추가한 사람: 무조건 맨 위 고정(저장/새로고침 후에도 유지되게 Firestore에 같이 저장) */
+/** ✅ 신규 추가한 사람: 무조건 맨 위 고정 */
 const pinnedTopId = ref("");
 
 /** ===== Firestore save/load ===== */
@@ -436,14 +472,17 @@ function applyPeopleFromRemote(remotePeople) {
   const fixed = remotePeople.map((p) => {
     const assign = p?.assign && typeof p.assign === "object" ? p.assign : {};
     const safeAssign = makeEmptyAssign();
+
     for (const d of days) {
       const dk = d.key;
       const a = assign?.[dk] || {};
+
       safeAssign[dk] = {
         pickupPlace: typeof a.pickupPlace === "string" ? a.pickupPlace : "",
         dropoffPlace: typeof a.dropoffPlace === "string" ? a.dropoffPlace : "",
       };
     }
+
     return {
       id: String(p?.id || uid("p")),
       name: typeof p?.name === "string" ? p.name : "",
@@ -457,7 +496,6 @@ function applyPeopleFromRemote(remotePeople) {
 async function saveAllToFirestore() {
   if (applyingRemote.value) return;
 
-  // pinnedTopId가 실제로 존재하는 id인지 확인(없으면 초기화)
   const pinned = String(pinnedTopId.value || "");
   if (pinned && !people.value.some((p) => String(p.id) === pinned)) pinnedTopId.value = "";
 
@@ -489,7 +527,6 @@ onMounted(() => {
 
       applyingRemote.value = true;
       try {
-        // ✅ pinned 먼저 적용(정렬에 영향)
         pinnedTopId.value = typeof data.pinnedTopId === "string" ? data.pinnedTopId : "";
 
         if (data.routes) applyRoutesFromRemote(data.routes);
@@ -511,12 +548,36 @@ onBeforeUnmount(() => {
 /** ✅ 행 저장 */
 const routeError = ref("");
 
+/** ✅ 장소명 변경 시 명단도 같이 변경(요일+승/하차 단위) */
+function propagatePlaceRename({ dk, kind, fromPlace, toPlace }) {
+  if (!fromPlace || !toPlace) return;
+  if (String(fromPlace) === String(toPlace)) return;
+
+  const placeField = kind === "dropoff" ? "dropoffPlace" : "pickupPlace";
+
+  for (const p of people.value) {
+    const a = p?.assign?.[dk];
+    if (!a) continue;
+    if (String(a[placeField] || "") === String(fromPlace)) {
+      a[placeField] = toPlace;
+    }
+  }
+}
+
 async function saveRow(row) {
   routeError.value = "";
 
   const k = row.key;
   const d = draft[k];
   if (!d) return;
+
+  const dk = dayKey.value;
+
+  const oldKind = row.kind; // 현재 routes에 있는 kind(기준)
+  const oldArr = routes?.[dk]?.[oldKind] || [];
+  const oldItem = oldArr.find((x) => x.id === row.id);
+  const oldPlace = String(oldItem?.place || "");
+  const oldTime = String(oldItem?.time || "");
 
   const newKind = d.kind === "dropoff" ? "dropoff" : "pickup";
   const newTime = normalizeTime(d.time);
@@ -531,17 +592,31 @@ async function saveRow(row) {
     return;
   }
 
-  const oldArr = routes?.[dayKey.value]?.[row.kind] || [];
+  // 기존 제거
   const idx = oldArr.findIndex((x) => x.id === row.id);
   if (idx >= 0) oldArr.splice(idx, 1);
 
-  const newArr = routes?.[dayKey.value]?.[newKind] || [];
+  // 새 배열에 추가
+  const newArr = routes?.[dk]?.[newKind] || [];
   newArr.push({ id: row.id, time: newTime, place: newPlace });
+
+  // ✅ 저장 시점에만 시간정렬 적용
   newArr.sort(sortByTimeAsc);
 
-  const newKey = makeRowKey(dayKey.value, newKind, row.id);
+  // draft key 갱신
+  const newKey = makeRowKey(dk, newKind, row.id);
   delete draft[k];
   draft[newKey] = { kind: newKind, time: newTime, place: newPlace };
+
+  // ✅ 장소명 변경이면(그리고 삭제가 아닌 수정이면) 명단도 같이 변경
+  // - kind가 바뀐 경우: oldKind쪽에 묶였던 사람들은 oldPlace 기준이니, 그쪽을 newPlace로 변경
+  // - (원하면 kind 변경도 같이 따라가게 할 수 있지만, 요청은 '장소명 변경 따라가기'라서 장소만 변경)
+  if (oldPlace && newPlace && String(oldPlace) !== String(newPlace)) {
+    propagatePlaceRename({ dk, kind: oldKind, fromPlace: oldPlace, toPlace: newPlace });
+  }
+
+  // 참고: 시간만 바뀌면 명단 변경 없음. 홈은 routes time을 바로 읽으니 자동 반영.
+  // oldTime/newTime 비교는 필요 없음.
 
   await saveAllToFirestore();
 }
@@ -554,6 +629,7 @@ async function removeStop(dk, kind, id) {
   const k = makeRowKey(dk, kind, id);
   if (draft[k]) delete draft[k];
 
+  // 삭제 시 명단은 건드리지 않음(원래대로라면 '(기존)'으로 남게 됨)
   await saveAllToFirestore();
 }
 
@@ -579,6 +655,8 @@ async function addStopFromForm() {
   const arr = routes?.[dayKey.value]?.[kind];
   const id = uid(`${dayKey.value}-${kind}`);
   arr.push({ id, time, place });
+
+  // ✅ 추가는 "저장" 성격이므로 즉시 정렬(원래 의도 유지)
   arr.sort(sortByTimeAsc);
 
   const key = makeRowKey(dayKey.value, kind, id);
@@ -662,34 +740,26 @@ function setNameRef(id, el) {
 /** ✅ 방금 추가한 사람 id 추적(이름 입력하면 검색창 자동 입력용) */
 const newlyAddedId = ref("");
 
-/** ✅ 새 사람: 맨 위 + 1페이지 + 이름칸 자동 포커스
- *  + ✅ 방금 만든 사람을 검색창에 자동 입력해서 "바로 표시"
- *  + ✅ 신규는 무조건 맨 위 고정(pinnedTopId)
- */
+/** ✅ 새 사람: 맨 위 + 1페이지 + 이름칸 자동 포커스 + 검색 자동 */
 async function addPerson() {
   const id = uid("p");
   const newPerson = { id, name: "", assign: makeEmptyAssign() };
 
-  // (1) 맨 위에 추가
   people.value.unshift(newPerson);
 
-  // (2) ✅ 신규 무조건 맨 위 고정
   pinnedTopId.value = id;
 
-  // (3) 페이지/탭 고정
   page.value = 1;
   tab.value = "roster";
 
   await nextTick();
 
-  // (4) 이름칸 포커스
   const el = nameRefs[id];
   if (el && typeof el.focus === "function") {
     el.focus();
     if (typeof el.select === "function") el.select();
   }
 
-  // (5) ✅ 이름 입력되면 검색어 자동 세팅
   newlyAddedId.value = id;
   nameQuery.value = "";
 }
@@ -707,6 +777,17 @@ watch(
     }
   }
 );
+
+/** ✅ 옵션 존재 여부(기본노선에 없으면 '(기존)' 옵션을 추가해 유지) */
+function optionExists(day, kind, place) {
+  if (!place) return true;
+  return placeOptions(day, kind).some((o) => String(o.place) === String(place));
+}
+
+/** (명단에서 장소 바꾸는 건 그냥 값만 바뀌면 됨) */
+function onAssignPlaceChange() {
+  // no-op
+}
 
 async function removePerson(id) {
   const i = people.value.findIndex((p) => p.id === id);
@@ -746,6 +827,7 @@ function autoTimeValue(day, kind, place) {
 </script>
 
 <style scoped>
+/* ✅ 스타일은 너가 준 그대로 (변경 없음) */
 .page {
   min-height: 100vh;
   background: #0b0c10;
