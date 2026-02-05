@@ -23,6 +23,7 @@
             <option value="보강">보강</option>
             <option value="체험">체험</option>
             <option value="사용자 지정">사용자 지정 텍스트</option>
+            <option value="결석">결석</option>
           </select>
         </div>
 
@@ -40,14 +41,46 @@
         </div>
       </div>
 
-      <!-- 보강/사용자지정: 기존 명단에서 선택 -->
-      <div class="row" v-else>
+      <!-- 보강/사용자지정/결석: 기존 명단에서 검색 선택 -->
+      <div class="row" v-if="draft.kind !== '체험'">
         <div class="field grow">
-          <span class="lab">기존 명단 이름 선택</span>
-          <select class="inp select" v-model="draft.personId">
-            <option value="">(선택)</option>
-            <option v-for="p in peopleOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
-          </select>
+          <span class="lab">기존 명단 이름 검색</span>
+
+          <div class="combo" ref="comboEl">
+            <input
+              class="inp"
+              v-model="personQuery"
+              placeholder="이름 검색 (예: 김준, 최시)"
+              @focus="openSuggest()"
+              @input="onPersonInput"
+              @keydown="onPersonKeydown"
+            />
+
+            <div v-if="showSuggest" class="suggest">
+              <button
+                v-for="(p, idx) in filteredPeople"
+                :key="p.id"
+                type="button"
+                class="sitem"
+                :class="{ active: idx === activeIndex }"
+                @click="pickPerson(p)"
+              >
+                {{ p.name }}
+              </button>
+
+              <div v-if="filteredPeople.length === 0" class="sempty">검색 결과가 없습니다.</div>
+
+              <div v-if="draft.personId" class="sfoot">
+                <span class="sel">선택됨: {{ selectedPersonName || "—" }}</span>
+                <button class="sbtn" type="button" @click="clearPerson">선택 해제</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 선택된 사람 표시(가독성) -->
+          <div class="picked" v-if="draft.personId">
+            <span class="chip pick">{{ selectedPersonName || "(이름없음)" }}</span>
+          </div>
         </div>
 
         <div class="field grow" v-if="draft.kind === '사용자 지정'">
@@ -201,14 +234,14 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const store = useSettingsStore();
 const saving = ref(false);
 
 const draft = reactive({
-  kind: "보강", // "보강" | "체험" | "사용자 지정"
+  kind: "보강", // "보강" | "체험" | "사용자 지정" | "결석"
   date: "",
   personId: "",
   tempName: "",
@@ -235,6 +268,7 @@ const canAdd = computed(() => {
     return !!draft.customText?.trim();
   }
 
+  // 결석/보강은 personId만 있으면 OK
   return true;
 });
 
@@ -314,6 +348,135 @@ function timeForReserve(r, type) {
   return store.autoTimeValue?.(dayKey, type, place) || "—";
 }
 
+/** =========================
+ * ✅ 검색형 선택(Autocomplete)
+ * ========================= */
+const comboEl = ref(null);
+const personQuery = ref("");
+const showSuggest = ref(false);
+const activeIndex = ref(0);
+
+const selectedPersonName = computed(() => {
+  if (!draft.personId) return "";
+  const p = peopleOptions.value.find((x) => String(x.id) === String(draft.personId));
+  return p?.name || "";
+});
+
+const filteredPeople = computed(() => {
+  const kw = String(personQuery.value || "").trim().toLowerCase();
+  const base = peopleOptions.value;
+
+  // 선택이 이미 되어 있고, 입력이 선택된 이름 그대로면 전체를 보여주지 말고(너무 길어짐) 기본은 좁혀서 보여줌
+  if (!kw) return base.slice(0, 30);
+
+  return base
+    .filter((p) => String(p.name || "").toLowerCase().includes(kw))
+    .slice(0, 30);
+});
+
+function openSuggest() {
+  showSuggest.value = true;
+  activeIndex.value = 0;
+}
+
+function closeSuggest() {
+  showSuggest.value = false;
+  activeIndex.value = 0;
+}
+
+function pickPerson(p) {
+  if (!p || !p.id) return;
+  draft.personId = String(p.id);
+  personQuery.value = String(p.name || "");
+  closeSuggest();
+}
+
+function clearPerson() {
+  draft.personId = "";
+  personQuery.value = "";
+  openSuggest();
+}
+
+function onPersonInput() {
+  // 입력이 바뀌면 선택 해제(의도: 다시 찾는 중)
+  if (draft.personId) draft.personId = "";
+  openSuggest();
+}
+
+function onPersonKeydown(e) {
+  if (!showSuggest.value && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    openSuggest();
+    return;
+  }
+
+  if (!showSuggest.value) return;
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeSuggest();
+    return;
+  }
+
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    const max = Math.max(0, filteredPeople.value.length - 1);
+    activeIndex.value = Math.min(max, activeIndex.value + 1);
+    return;
+  }
+
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    activeIndex.value = Math.max(0, activeIndex.value - 1);
+    return;
+  }
+
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const p = filteredPeople.value[activeIndex.value];
+    if (p) pickPerson(p);
+  }
+}
+
+// kind 바뀌면 입력 정리
+watch(
+  () => draft.kind,
+  (k) => {
+    if (k === "체험") {
+      draft.personId = "";
+      personQuery.value = "";
+      closeSuggest();
+      return;
+    }
+
+    // 체험 -> 다른 종류로 바뀌면, 기존 선택/검색은 유지(사용자가 다시 선택할 수도 있으니)
+    openSuggest();
+  }
+);
+
+// personId가 외부에서 바뀌면(예: 스냅샷/리로드) 표시 이름 동기화
+watch(
+  () => draft.personId,
+  (pid) => {
+    if (!pid) return;
+    const p = peopleOptions.value.find((x) => String(x.id) === String(pid));
+    if (p && p.name) personQuery.value = String(p.name);
+  }
+);
+
+function handleDocClick(e) {
+  const el = comboEl.value;
+  if (!el) return;
+  if (el.contains(e.target)) return;
+  closeSuggest();
+}
+
+onMounted(() => {
+  document.addEventListener("mousedown", handleDocClick, true);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("mousedown", handleDocClick, true);
+});
+
 async function addReserve() {
   if (!canAdd.value) return;
 
@@ -344,12 +507,12 @@ async function addReserve() {
     store.reserveItems.push(item);
   }
 
-  // 입력 초기화(예약일은 유지해도 되는데, 요청상 “추가 후 리스트로”라서 일단 유지)
+  // 입력 초기화
   draft.tempName = "";
   draft.personId = "";
   draft.customText = "";
-
-  // 자동저장은 원하면 여기서 켜도 됨. 지금은 저장버튼으로 통일.
+  personQuery.value = "";
+  closeSuggest();
 }
 
 function removeReserve(id) {
@@ -497,6 +660,76 @@ function removeReserve(id) {
   white-space: nowrap;
 }
 
+/* ✅ 검색 콤보박스(추가된 스타일) */
+.combo {
+  position: relative;
+}
+.suggest {
+  position: absolute;
+  z-index: 9999;
+  left: 0;
+  right: 0;
+  top: calc(36px + 6px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(14, 16, 24, 0.98);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+.sitem {
+  width: 100%;
+  text-align: left;
+  padding: 10px 10px;
+  font-size: 12px;
+  color: #eaf0ff;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.sitem:hover,
+.sitem.active {
+  background: rgba(79, 107, 255, 0.18);
+}
+.sempty {
+  padding: 10px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.sfoot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sfoot .sel {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.sbtn {
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.18);
+  color: #eaf0ff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sbtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.picked {
+  margin-top: 8px;
+}
+.chip.pick {
+  border-color: rgba(79, 107, 255, 0.55);
+  background: rgba(79, 107, 255, 0.14);
+}
+
+/* 기존 리스트 스타일 */
 .personcard {
   margin-top: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);

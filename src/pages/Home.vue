@@ -394,14 +394,16 @@ function normalizeReserveKindKey(rawKind, rawMemoType) {
   if (k === "체험") return "trial";
   if (k === "보강") return "reinforce";
   if (k === "사용자 지정") return "custom";
+  if (k === "결석") return "absent";
 
   // 레거시(memoType)
   if (mt === "trial") return "trial";
   if (mt === "reinforce") return "reinforce";
   if (mt === "custom") return "custom";
+  if (mt === "absent") return "absent";
 
-  // 아주 옛날에 kind가 trial/reinforce/custom로 들어올 수도
-  if (k === "trial" || k === "reinforce" || k === "custom") return k;
+  // 아주 옛날에 kind가 trial/reinforce/custom/absent로 들어올 수도
+  if (k === "trial" || k === "reinforce" || k === "custom" || k === "absent") return k;
 
   return ""; // unknown
 }
@@ -410,6 +412,7 @@ function reserveLabelForDisplay(kindKey, customText) {
   if (kindKey === "trial") return "체험";
   if (kindKey === "reinforce") return "보강";
   if (kindKey === "custom") return String(customText || "").trim() || "사용자지정";
+  if (kindKey === "absent") return "결석";
   return "예약";
 }
 
@@ -492,6 +495,26 @@ function personNameById(pid) {
   return String(p?.name || "").trim();
 }
 
+/** ✅ 결석 자동삭제: 결석일이 "지나면" 즉시 삭제 (KST 기준) */
+function collectExpiredAbsenceIds() {
+  const today = normalizeIsoDate(kstIsoYmd());
+  const list = Array.isArray(reservations.value) ? reservations.value : [];
+  const out = [];
+
+  for (const r of list) {
+    const rk = normalizeReserveKindKey(r?.kind, r?.memoType);
+    if (rk !== "absent") continue;
+
+    const d = normalizeIsoDate(r?.date);
+    if (d && d < today) out.push(String(r?.id || ""));
+  }
+  return out.filter(Boolean);
+}
+
+function reserveLabelLower(kindKey, customText) {
+  return reserveLabelForDisplay(kindKey, customText).toLowerCase();
+}
+
 function buildDayModelForIso(dayKey, isoYmdRaw) {
   const isoYmd = normalizeIsoDate(isoYmdRaw);
 
@@ -525,6 +548,13 @@ function buildDayModelForIso(dayKey, isoYmdRaw) {
     }
 
     if (!targetName) continue;
+
+    // ✅ 결석: 해당일 완전 제외
+    if (kindKey === "absent") {
+      if (!overrides[targetName]) overrides[targetName] = {};
+      overrides[targetName].__none__ = true;
+      continue;
+    }
 
     // ✅ 체험: 기존명단과 무관하게 추가
     if (kindKey === "trial") {
@@ -870,7 +900,7 @@ const filteredDays = computed(() => {
       if (normalizeIsoDate(r?.date) !== normalizeIsoDate(d.isoYmd)) return false;
 
       const kindKey = normalizeReserveKindKey(r?.kind, r?.memoType);
-      const label = reserveLabelForDisplay(kindKey, r?.customText || r?.memoText).toLowerCase();
+      const label = reserveLabelLower(kindKey, r?.customText || r?.memoText);
 
       const pu = String(r?.pickupPlace || "").toLowerCase();
       const dof = String(r?.dropoffPlace || "").toLowerCase();
@@ -954,8 +984,13 @@ onMounted(() => {
       if (Array.isArray(data.people)) roster.value = data.people;
       else roster.value = [];
 
-      // ✅ 여기: 새 구조(kind/personId/tempName/customText)까지 포함해서 정규화
       reservations.value = normalizeReservationsInput(data);
+
+      // ✅ 결석 자동삭제(당일이 지나면 삭제)
+      const toDelete = collectExpiredAbsenceIds();
+      if (toDelete.length > 0) {
+        deleteReservationsByIds(toDelete).catch(() => {});
+      }
     },
     () => {}
   );

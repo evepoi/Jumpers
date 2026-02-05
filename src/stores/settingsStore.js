@@ -266,21 +266,25 @@ function onAssignPlaceChange() {
 
 /** ===== 예약명단(새 구조) =====
  * 예약 1건 = 예약일 1개(요일 1줄만 표시)
- * kind: "보강" | "체험" | "사용자 지정"
+ * kind: "보강" | "체험" | "사용자 지정" | "결석"
  * - 체험: tempName 사용(1회용)
- * - 보강/사용자 지정: personId 사용(기존 명단 선택)
+ * - 보강/사용자 지정/결석: personId 사용(기존 명단 선택)
  * - 사용자 지정: customText 추가 텍스트
+ * - 결석: 장소/시간 없음(홈에서 완전 제외)
  */
 const reserveItems = ref([]); // [{id,kind,date,personId,tempName,customText,pickupPlace,dropoffPlace,createdAtMs,completedAtMs}]
 const reserveError = ref("");
 
 function normalizeReserveKind(k) {
   const v = String(k || "").trim();
-  if (v === "보강" || v === "체험" || v === "사용자 지정") return v;
+  if (v === "보강" || v === "체험" || v === "사용자 지정" || v === "결석") return v;
+
   // 레거시 memoType 대응
   if (v === "reinforce") return "보강";
   if (v === "trial") return "체험";
   if (v === "custom") return "사용자 지정";
+  if (v === "absent") return "결석";
+
   return "보강";
 }
 
@@ -311,18 +315,18 @@ function applyReservationsFromRemote(remoteReservations) {
       const memoType = typeof raw?.memoType === "string" ? raw.memoType : "reinforce";
       const memoText = typeof raw?.memoText === "string" ? raw.memoText : "";
 
-      const kind = normalizeReserveKind(memoType); // reinforce/trial/custom -> 보강/체험/사용자 지정
+      const kind = normalizeReserveKind(memoType); // reinforce/trial/custom/absent -> 보강/체험/사용자 지정/결석
 
       for (const nm of legacyNames) {
         out.push({
           id: uid("res"),
           kind,
           date,
-          personId: "", // 레거시에서는 id가 없어서 안전하게 비움
-          tempName: kind === "체험" ? nm : nm, // 표시용 보존(매칭 실패 방지)
+          personId: "",
+          tempName: kind === "체험" ? nm : nm, // 표시용 보존
           customText: kind === "사용자 지정" ? String(memoText || "").trim() : "",
-          pickupPlace,
-          dropoffPlace,
+          pickupPlace: kind === "결석" ? "" : pickupPlace,
+          dropoffPlace: kind === "결석" ? "" : dropoffPlace,
           createdAtMs: typeof raw?.createdAtMs === "number" ? raw.createdAtMs : Date.now(),
           completedAtMs: typeof raw?.completedAtMs === "number" ? raw.completedAtMs : 0,
         });
@@ -343,7 +347,7 @@ function applyReservationsFromRemote(remoteReservations) {
     let dropoffPlace = typeof raw?.dropoffPlace === "string" ? raw.dropoffPlace : "";
 
     // 레거시(kind/place) 단일필드 -> 새 필드 변환(혹시 남아있을 수 있음)
-    if ((!pickupPlace && !dropoffPlace) && typeof raw?.place === "string") {
+    if (!pickupPlace && !dropoffPlace && typeof raw?.place === "string") {
       const k = raw?.kind === "dropoff" ? "dropoff" : "pickup";
       if (k === "pickup") pickupPlace = String(raw.place || "");
       else dropoffPlace = String(raw.place || "");
@@ -359,8 +363,8 @@ function applyReservationsFromRemote(remoteReservations) {
       personId,
       tempName,
       customText,
-      pickupPlace,
-      dropoffPlace,
+      pickupPlace: kind === "결석" ? "" : pickupPlace,
+      dropoffPlace: kind === "결석" ? "" : dropoffPlace,
       createdAtMs,
       completedAtMs,
     });
@@ -390,18 +394,22 @@ async function saveAllToFirestore() {
     assign: deepClone(p.assign || makeEmptyAssign()),
   }));
 
-  const cleanedReservations = reserveItems.value.map((r) => ({
-    id: String(r.id || uid("res")),
-    kind: normalizeReserveKind(r.kind),
-    date: String(r.date || ""),
-    personId: String(r.personId || ""),
-    tempName: String(r.tempName || ""),
-    customText: String(r.customText || ""),
-    pickupPlace: String(r.pickupPlace || ""),
-    dropoffPlace: String(r.dropoffPlace || ""),
-    createdAtMs: typeof r.createdAtMs === "number" ? r.createdAtMs : Date.now(),
-    completedAtMs: typeof r.completedAtMs === "number" ? r.completedAtMs : 0,
-  }));
+  const cleanedReservations = reserveItems.value.map((r) => {
+    const kind = normalizeReserveKind(r.kind);
+
+    return {
+      id: String(r.id || uid("res")),
+      kind,
+      date: String(r.date || ""),
+      personId: String(r.personId || ""),
+      tempName: String(r.tempName || ""),
+      customText: String(r.customText || ""),
+      pickupPlace: kind === "결석" ? "" : String(r.pickupPlace || ""),
+      dropoffPlace: kind === "결석" ? "" : String(r.dropoffPlace || ""),
+      createdAtMs: typeof r.createdAtMs === "number" ? r.createdAtMs : Date.now(),
+      completedAtMs: typeof r.completedAtMs === "number" ? r.completedAtMs : 0,
+    };
+  });
 
   const payload = {
     routes: deepClone(routes),
@@ -535,8 +543,10 @@ function propagatePlaceRename({ dk, kind, fromPlace, toPlace }) {
     }
   }
 
-  // ✅ 예약에서도 이름 바뀐 장소를 따라가게(같은 요일에만)
+  // ✅ 예약에서도 이름 바뀐 장소를 따라가게(같은 요일에만) - 결석은 제외
   for (const r of reserveItems.value) {
+    if (normalizeReserveKind(r.kind) === "결석") continue;
+
     const rdk = reserveDayKeyFromItem(r);
     if (String(rdk || "") !== String(dk)) continue;
     if (kind === "pickup" && String(r.pickupPlace || "") === String(fromPlace)) r.pickupPlace = toPlace;
@@ -747,7 +757,6 @@ async function removePerson(id) {
 
 /** ===== 예약명단 helpers (새 구조) ===== */
 function reserveSetToday() {
-  // SettingsReserveCard.vue에서 직접 draft.date를 쓰더라도, 기존 함수는 남겨둠
   return formatTodayKSTDate();
 }
 
@@ -804,11 +813,11 @@ function addReserveItem(item) {
     id: String(item.id || uid("res")),
     kind,
     date,
-    personId,
-    tempName,
-    customText,
-    pickupPlace: String(item.pickupPlace || ""),
-    dropoffPlace: String(item.dropoffPlace || ""),
+    personId: kind === "체험" ? "" : personId,
+    tempName: kind === "체험" ? tempName : "",
+    customText: kind === "사용자 지정" ? customText : "",
+    pickupPlace: kind === "결석" ? "" : String(item.pickupPlace || ""),
+    dropoffPlace: kind === "결석" ? "" : String(item.dropoffPlace || ""),
     createdAtMs: typeof item.createdAtMs === "number" ? item.createdAtMs : Date.now(),
     completedAtMs: typeof item.completedAtMs === "number" ? item.completedAtMs : 0,
   });
@@ -822,12 +831,17 @@ function removeReserveItem(id) {
 }
 
 /** ✅ 예약 리스트 편집 저장(날짜/승하차 장소 수정) */
-function validateReserveCore({ date, pickupPlace, dropoffPlace }) {
+function validateReserveCore({ kind, date, pickupPlace, dropoffPlace }) {
+  const k = normalizeReserveKind(kind);
+
   const d = String(date || "").trim();
   if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return "날짜 형식이 올바르지 않습니다.";
 
   const dk = dayKeyFromDate(d);
   if (!dk) return "주말(토/일)은 예약명단에서 지원하지 않습니다.";
+
+  // ✅ 결석은 장소/시간이 없다(둘다 비어도 OK)
+  if (k === "결석") return "";
 
   const pu = String(pickupPlace || "").trim();
   const dof = String(dropoffPlace || "").trim();
@@ -854,16 +868,24 @@ async function updateReserveCore(resId, patch) {
   const r = reserveItems.value.find((x) => String(x.id) === id);
   if (!r) return "예약을 찾을 수 없습니다.";
 
+  const kind = patch?.kind ?? r.kind;
   const date = patch?.date ?? r.date;
   const pickupPlace = patch?.pickupPlace ?? r.pickupPlace;
   const dropoffPlace = patch?.dropoffPlace ?? r.dropoffPlace;
 
-  const msg = validateReserveCore({ date, pickupPlace, dropoffPlace });
+  const msg = validateReserveCore({ kind, date, pickupPlace, dropoffPlace });
   if (msg) return msg;
 
+  r.kind = normalizeReserveKind(kind);
   r.date = String(date);
-  r.pickupPlace = String(pickupPlace || "").trim();
-  r.dropoffPlace = String(dropoffPlace || "").trim();
+
+  if (normalizeReserveKind(r.kind) === "결석") {
+    r.pickupPlace = "";
+    r.dropoffPlace = "";
+  } else {
+    r.pickupPlace = String(pickupPlace || "").trim();
+    r.dropoffPlace = String(dropoffPlace || "").trim();
+  }
 
   await saveAllToFirestore();
   return "";
