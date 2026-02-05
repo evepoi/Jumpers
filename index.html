@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jumpers</title>
+
+    <!-- public/vite.svg -->
+    <link rel="icon" type="image/svg+xml" href="/Jumpers/vite.svg" />
+
+    <!-- GitHub Pages SPA 새로고침 복원 스크립트 -->
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var p = params.get("p");
+        if (!p) return;
+
+        window.history.replaceState(null, "", decodeURIComponent(p));
+
+        params.delete("p");
+        var rest = params.toString();
+        var clean =
+          window.location.pathname + (rest ? "?" + rest : "") + window.location.hash;
+
+        window.history.replaceState(null, "", clean);
+      })();
+    </script>
+    <script type="module" crossorigin src="/Jumpers/assets/index-D5nryaxC.js"></script>
+    <link rel="stylesheet" crossorigin href="/Jumpers/assets/index-B1JhQUb8.css">
+  </head>
+
+  <body>
+    <div id="app"></div>
+  </body>
+</html>

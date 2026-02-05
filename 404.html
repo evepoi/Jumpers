@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Redirecting…</title>
+
+    <script>
+      (function () {
+        var l = window.location;
+
+        // ✅ repo name 고정 (중요)
+        var repoBase = "/Jumpers";
+
+        // 원래 경로를 p로 담아서 repoBase의 index로 이동
+        var target =
+          repoBase + "/?p=" + encodeURIComponent(l.pathname + l.search + l.hash);
+
+        l.replace(target);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>
